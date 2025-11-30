@@ -1,8 +1,1 @@
-let a = 12;
-let b = 4;
-let c = a + b;
-
-def my_func(test: int)
-{
-    return test + 5;
-}
+let my_var = 12;

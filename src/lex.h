@@ -8,8 +8,12 @@
 #include <string.h>
 #include <sys/stat.h>
 
-static int g_pos = 0;
-static char* g_buffer = NULL;
+#include "log.h"
+
+static int g_lpos = 0;
+static char* g_lbuf = NULL;
+
+#define TOKEN_COUNT 1024
 
 #define KW_CONST "const"
 #define KW_LET "let"
@@ -26,7 +30,7 @@ enum token_type_t
     TOK_INT,
     TOK_STRING,
 
-    TOK_NAME,
+    TOK_NAME = 128,
     TOK_CONST,
     TOK_LET,
     TOK_DEF,
@@ -64,12 +68,54 @@ struct token_t
     int pos;
 };
 
-#define TOKEN struct token_t
-#define TYPE enum token_type_t
+typedef struct token_t token_t;
+typedef enum token_type_t token_type_t;
 
-void print_token(TOKEN* token)
+#define CASE(t)                                                                                                        \
+    case t:                                                                                                            \
+        return #t;
+static char* get_token_type_string(token_type_t type)
 {
-    fprintf(stdout, "[%d, %d] -> %s\n", token->type, token->pos, token->value);
+    switch (type)
+    {
+        CASE(TOK_EOF)
+        CASE(TOK_INT)
+        CASE(TOK_STRING)
+        CASE(TOK_NAME)
+        CASE(TOK_CONST)
+        CASE(TOK_LET)
+        CASE(TOK_DEF)
+        CASE(TOK_RETURN)
+        CASE(TOK_IF)
+        CASE(TOK_ELSE)
+        CASE(TOK_FOR)
+        CASE(TOK_WHILE)
+        CASE(TOK_ASSIGN)
+        CASE(TOK_SPACE)
+        CASE(TOK_TAB)
+        CASE(TOK_NEWLINE)
+        CASE(TOK_CARRIAGE)
+        CASE(TOK_COLON)
+        CASE(TOK_SEMICOLON)
+        CASE(TOK_QUOTE)
+        CASE(TOK_L_PAREN)
+        CASE(TOK_R_PAREN)
+        CASE(TOK_L_SQUARE)
+        CASE(TOK_R_SQUARE)
+        CASE(TOK_L_BRACKET)
+        CASE(TOK_R_BRACKET)
+        CASE(TOK_UNKNOWN)
+    }
+    return "";
+}
+
+void print_token(token_t* token)
+{
+    if (token->type == 0 || token->value == "")
+    {
+        return;
+    }
+    log_debug("  [%s, %d] -> %s", get_token_type_string(token->type), token->pos, token->value);
 }
 
 bool is_whitespace(char c)
@@ -97,25 +143,25 @@ bool is_semicolon(char c)
     return c == ';';
 }
 
-TOKEN lex_number()
+token_t lex_number()
 {
-    TOKEN token;
-    token.pos = g_pos;
+    token_t token;
+    token.pos = g_lpos;
     token.type = TOK_INT;
 
     // Count the number of digits in this number until we hit a
     // non-digit char.
     int count = 0;
-    while (isdigit(g_buffer[g_pos + count]))
+    while (isdigit(g_lbuf[g_lpos + count]))
     {
         count++;
     }
 
     token.value = (char*)malloc(count + 1);
-    memcpy(token.value, &g_buffer[g_pos], count);
+    memcpy(token.value, &g_lbuf[g_lpos], count);
     token.value[count] = 0;
 
-    g_pos += count;
+    g_lpos += count;
     return token;
 }
 
@@ -125,49 +171,51 @@ TOKEN lex_number()
         token.type = TOK_##name;                                                                                       \
     }
 
-TOKEN lex_keyword()
+token_t lex_keyword()
 {
-    TOKEN token;
-    token.pos = g_pos;
+    token_t token;
+    token.pos = g_lpos;
 
     int count = 0;
-    while (is_keyword(g_buffer[g_pos + count]))
+    while (is_keyword(g_lbuf[g_lpos + count]))
     {
         count++;
     }
     token.value = (char*)malloc(count + 1);
-    memcpy(token.value, &g_buffer[g_pos], count);
+    memcpy(token.value, &g_lbuf[g_lpos], count);
     token.value[count] = 0;
 
-    if (memcmp(token.value, "const", count))
+    log_debug("Lexing keyword: %s", token.value);
+
+    if (strcmp(token.value, "const") == 0)
     {
         token.type = TOK_CONST;
     }
-    else if (memcmp(token.value, "let", count))
+    else if (strcmp(token.value, "let") == 0)
     {
         token.type = TOK_LET;
     }
-    else if (memcmp(token.value, "def", count))
+    else if (strcmp(token.value, "def") == 0)
     {
         token.type = TOK_DEF;
     }
-    else if (memcmp(token.value, "return", count))
+    else if (strcmp(token.value, "return") == 0)
     {
         token.type = TOK_RETURN;
     }
-    else if (memcmp(token.value, "if", count))
+    else if (strcmp(token.value, "if") == 0)
     {
         token.type = TOK_IF;
     }
-    else if (memcmp(token.value, "else", count))
+    else if (strcmp(token.value, "else") == 0)
     {
         token.type = TOK_ELSE;
     }
-    else if (memcmp(token.value, "for", count))
+    else if (strcmp(token.value, "for") == 0)
     {
         token.type = TOK_FOR;
     }
-    else if (memcmp(token.value, "while", count))
+    else if (strcmp(token.value, "while") == 0)
     {
         token.type = TOK_WHILE;
     }
@@ -175,56 +223,56 @@ TOKEN lex_keyword()
     {
         token.type = TOK_NAME;
     }
-    g_pos += count;
+    g_lpos += count;
 
     return token;
 }
 
-TOKEN lex_string()
+token_t lex_string()
 {
-    TOKEN token;
+    token_t token;
     token.type = TOK_STRING;
-    g_pos++;
+    g_lpos++;
     return token;
 }
 
-TOKEN lex_operator()
+token_t lex_operator()
 {
-    TOKEN token;
+    token_t token;
 
     // Store single char in 2-byte value
     token.value = (char*)malloc(2);
-    token.value[0] = g_buffer[g_pos];
+    token.value[0] = g_lbuf[g_lpos];
     token.value[1] = 0;
 
     // Store type from the value itself
-    token.type = (TYPE)token.value[0];
+    token.type = (token_type_t)token.value[0];
 
     // Store and increment position
-    token.pos = g_pos;
-    g_pos++;
+    token.pos = g_lpos;
+    g_lpos++;
     return token;
 }
 
-TOKEN lex_semicolon()
+token_t lex_semicolon()
 {
-    TOKEN token;
+    token_t token;
     token.type = TOK_SEMICOLON;
     token.value = (char*)";";
-    token.pos = g_pos;
-    g_pos++;
+    token.pos = g_lpos;
+    g_lpos++;
     return token;
 }
 
-TOKEN lex_next()
+token_t lex_next()
 {
     // Skip whitespace
-    while (is_whitespace(g_buffer[g_pos]))
+    while (is_whitespace(g_lbuf[g_lpos]))
     {
-        g_pos++;
+        g_lpos++;
     }
 
-    char c = g_buffer[g_pos];
+    char c = g_lbuf[g_lpos];
 
     // Integers
     if (isdigit(c))
@@ -252,26 +300,29 @@ TOKEN lex_next()
         return lex_semicolon();
     }
 
-    TOKEN token;
+    token_t token;
     token.type = c;
     token.value = (char*)malloc(2);
     token.value[0] = c;
     token.value[1] = 0;
-    token.pos = g_pos;
-    g_pos++;
+    token.pos = g_lpos;
+    g_lpos++;
     return token;
 }
 
-int lex(TOKEN* tokens)
+size_t lex(token_t* tokens)
 {
-    TOKEN* current_token = tokens;
-    while (g_buffer[g_pos] != TOK_EOF)
+    memset(tokens, 0, sizeof(token_t) * TOKEN_COUNT);
+    token_t* current_token = tokens;
+    size_t token_count = 0;
+    while (g_lbuf[g_lpos] != TOK_EOF)
     {
-        TOKEN token = lex_next();
+        token_t token = lex_next();
         *current_token = token;
         current_token++;
+        token_count++;
     }
-    return 0;
+    return token_count;
 }
 
 #endif

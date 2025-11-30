@@ -8,9 +8,7 @@
  *   - File I/O
  */
 
-#include "lex.h"
-
-#define TOKEN_COUNT 1024
+#include "ast.h"
 
 char* read_file(const char* filename)
 {
@@ -79,28 +77,14 @@ int main(int argc, char** argv)
     // 2. Get the file size.
     // 3. Read the file data into a buffer.
     // 4. Close the file.
-    g_buffer = read_file(file_name);
+    g_lbuf = read_file(file_name);
 
-    fprintf(stdout, "Lexing: %s\n", g_buffer);
+    log_debug("Lexing:\n%s", g_lbuf);
 
-    // Lexically deconstruct the string buffer and construct a set of tokens.
-    // Assuming a maximum of TOKEN_COUNT tokens.
-    TOKEN tokens[TOKEN_COUNT];
-    memset(tokens, 0, sizeof(tokens));
-    const int lex_err = lex(tokens);
-
-    for (int i = 0; i < TOKEN_COUNT; i++)
-    {
-        TOKEN tok = tokens[i];
-        if (tok.type == 0)
-        {
-            break;
-        }
-        print_token(&tok);
-    }
+    ast* root_node = parse();
 
     // Free the lex buffer
-    free(g_buffer);
+    free(g_lbuf);
 
     return 0;
 }
