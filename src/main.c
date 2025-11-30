@@ -10,6 +10,52 @@
 
 #include "lex.h"
 
+#define TOKEN_COUNT 1024
+
+char* read_file(const char* filename)
+{
+    FILE* fp = NULL;
+    long file_size = 0;
+    char* buffer = NULL;
+
+    fp = fopen(filename, "r");
+    if (fp == NULL)
+    {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    // Determine file size
+    fseek(fp, 0, SEEK_END);
+    file_size = ftell(fp);
+    rewind(fp); // Go back to the beginning
+
+    // Allocate memory for the buffer
+    buffer = (char*)malloc(file_size + 1); // +1 for null terminator
+    if (buffer == NULL)
+    {
+        perror("Error allocating memory");
+        fclose(fp);
+        return NULL;
+    }
+
+    // Read the file content into the buffer
+    size_t bytes_read = fread(buffer, 1, file_size, fp);
+    if (bytes_read != file_size)
+    {
+        perror("Error reading file");
+        free(buffer);
+        fclose(fp);
+        return NULL;
+    }
+
+    // Add null terminator
+    buffer[file_size] = '\0';
+
+    fclose(fp);
+    return buffer;
+}
+
 int main(int argc, char** argv)
 {
     // Ensure exaclty one argument (the file's name)
@@ -21,8 +67,8 @@ int main(int argc, char** argv)
 
     // Ensure the file exists
     const char* file_name = argv[1];
-    struct stat buffer;
-    if (stat(file_name, &buffer) != 0)
+    struct stat stat_buffer;
+    if (stat(file_name, &stat_buffer) != 0)
     {
         fprintf(stderr, "File %s does not exist.", file_name);
         return 1;
@@ -33,26 +79,25 @@ int main(int argc, char** argv)
     // 2. Get the file size.
     // 3. Read the file data into a buffer.
     // 4. Close the file.
-    FILE* handle = fopen(file_name, "r");
-    fseek(handle, 0L, SEEK_END);
-    int file_size = ftell(handle) + 1;
-    fseek(handle, 0L, SEEK_SET);
-    fprintf(stdout, "Compiling file: %s (%db)\n", file_name, file_size);
-    char* file_data = (char*)malloc(file_size);
-    fgets(file_data, file_size, handle);
-    fclose(handle);
+    g_buffer = read_file(file_name);
 
-    // Copy the file data to a temporary lex buffer
-    g_buffer = (char*)malloc(file_size);
-    memcpy(g_buffer, file_data, file_size);
-    // Free the file data.
-    free(file_data);
-
-    fprintf(stdout, "Lexing: %s\n\n", g_buffer);
+    fprintf(stdout, "Lexing: %s\n", g_buffer);
 
     // Lexically deconstruct the string buffer and construct a set of tokens.
-    TOKEN* tokens = NULL;
-    const int lex_err = lex(&tokens);
+    // Assuming a maximum of TOKEN_COUNT tokens.
+    TOKEN tokens[TOKEN_COUNT];
+    memset(tokens, 0, sizeof(tokens));
+    const int lex_err = lex(tokens);
+
+    for (int i = 0; i < TOKEN_COUNT; i++)
+    {
+        TOKEN tok = tokens[i];
+        if (tok.type == 0)
+        {
+            break;
+        }
+        print_token(&tok);
+    }
 
     // Free the lex buffer
     free(g_buffer);

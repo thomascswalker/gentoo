@@ -6,6 +6,8 @@
         "cstring": "c",
         "memory": "c",
         "type_traits": "c",
-        "xmemory": "c"
+        "xmemory": "c",
+        "xutility": "c",
+        "xtr1common": "c"
     }
 }
