@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.s": "asm-intel-x86-generic",
+        "*.h": "cpp",
+        "atomic": "c",
+        "cstring": "c",
+        "memory": "c",
+        "type_traits": "c",
+        "xmemory": "c"
+    }
+}
