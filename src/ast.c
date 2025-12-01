@@ -3,6 +3,7 @@
 #include "misc.h"
 #include "tokenize.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,16 +19,12 @@ char* get_node_type_string(ast_node_t type)
         return "PROGRAM";
     case AST_BODY:
         return "BODY";
-    case AST_STMT:
-        return "STATEMENT";
-    case AST_EXPR:
-        return "EXPRESSION";
     case AST_IDENTIFIER:
         return "IDENTIFIER";
     case AST_CONSTANT:
         return "CONSTANT";
-    case AST_VARDECL:
-        return "VARDECL";
+    case AST_DECLVAR:
+        return "DECLVAR";
     case AST_ASSIGN:
         return "ASSIGN";
     case AST_BINOP:
@@ -35,6 +32,13 @@ char* get_node_type_string(ast_node_t type)
     default:
         return "UNKNOWN";
     }
+}
+
+ast* new_ast(ast_node_t type)
+{
+    ast* node = (ast*)malloc(sizeof(ast));
+    node->type = type;
+    return node;
 }
 
 void fmt_ast(char* buffer, ast* node)
@@ -63,7 +67,7 @@ void fmt_ast(char* buffer, ast* node)
             free(temp);
         }
 
-        sprintf(buffer, "{\"type\": \"program\", \"body\": [%s]}", bodies);
+        sprintf(buffer, "{\"type\": \"%s\", \"body\": [%s]}", get_node_type_string(node->type), bodies);
         free(bodies);
         break;
     }
@@ -89,21 +93,23 @@ void fmt_ast(char* buffer, ast* node)
             free(temp);
         }
 
-        sprintf(buffer, "{\"type\": \"body\", \"statements\": [%s]}", stmts);
+        sprintf(buffer, "{\"type\": \"%s\", \"statements\": [%s]}", get_node_type_string(node->type), stmts);
         free(stmts);
         break;
     }
     case AST_IDENTIFIER:
-        sprintf(buffer, "{\"type\": \"identifier\", \"name\": \"%s\"}", node->data.identifier.name);
+        sprintf(buffer, "{\"type\": \"%s\", \"name\": \"%s\"}", get_node_type_string(node->type),
+                node->data.identifier.name);
         break;
     case AST_CONSTANT:
-        sprintf(buffer, "{\"type\": \"constant\", \"value\": %d}", node->data.constant.value);
+        sprintf(buffer, "{\"type\": \"%s\", \"value\": %d}", get_node_type_string(node->type),
+                node->data.constant.value);
         break;
-    case AST_VARDECL:
+    case AST_DECLVAR:
         char* ident_buffer = (char*)calloc(1, 512);
-        fmt_ast(ident_buffer, node->data.vardecl.identifier);
-        sprintf(buffer, "{\"type\": \"vardecl\", \"ident\": %s, \"is_const\": %s}", ident_buffer,
-                node->data.vardecl.is_const ? "true" : "false");
+        fmt_ast(ident_buffer, node->data.declvar.identifier);
+        sprintf(buffer, "{\"type\": \"%s\", \"ident\": %s, \"is_const\": %s}", get_node_type_string(node->type),
+                ident_buffer, node->data.declvar.is_const ? "true" : "false");
         free(ident_buffer);
         break;
     case AST_ASSIGN:
@@ -116,7 +122,8 @@ void fmt_ast(char* buffer, ast* node)
         }
         fmt_ast(lhs_buffer, node->data.assign.lhs);
         fmt_ast(rhs_buffer, node->data.assign.rhs);
-        sprintf(buffer, "{\"type\": \"assign\", \"lhs\": %s, \"rhs\": %s}", lhs_buffer, rhs_buffer);
+        sprintf(buffer, "{\"type\": \"%s\", \"lhs\": %s, \"rhs\": %s}", get_node_type_string(node->type), lhs_buffer,
+                rhs_buffer);
         free(lhs_buffer);
         free(rhs_buffer);
         break;
@@ -125,13 +132,6 @@ void fmt_ast(char* buffer, ast* node)
         sprintf(buffer, "{\"type\": \"op\"}");
         break;
     }
-}
-
-ast* new_ast(ast_node_t type)
-{
-    ast* node = (ast*)malloc(sizeof(ast));
-    node->type = type;
-    return node;
 }
 
 void free_ast(ast* node)
@@ -171,8 +171,8 @@ void free_ast(ast* node)
         free(node->data.body.statements);
         node->data.body.statements = NULL;
         break;
-    case AST_VARDECL:
-        free_ast(node->data.vardecl.identifier);
+    case AST_DECLVAR:
+        free_ast(node->data.declvar.identifier);
         break;
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
@@ -196,6 +196,21 @@ bool expect(token_type_t type)
 bool expect_n(token_type_t type, size_t offset)
 {
     return (g_cur + offset)->type == type;
+}
+
+void throw(const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    char* buffer = (char*)malloc(1024);
+    vsprintf(buffer, format, args);
+    log_error("%s", format);
+    va_end(args);
+
+    free(buffer);
+
+    exit(1);
 }
 
 void require(token_type_t type)
@@ -229,18 +244,68 @@ bool can_continue()
 void next()
 {
     g_cur++;
-    log_debug("  Current token: pos=%d, type=%s, value='%s'", g_cur->pos, get_token_type_string(g_cur->type),
-              g_cur->value);
+    log_debug("  Current token: start=%d, end=%d, type=%s, value='%s'", g_cur->start, g_cur->end,
+              get_token_type_string(g_cur->type), g_cur->value);
+}
+
+ast* parse_constant()
+{
+    log_info("Parsing constant...");
+    ast* expr = new_ast(AST_CONSTANT);
+    expr->data.constant.type = CONST_INT;
+    expr->data.constant.value = atoi(g_cur->value);
+    next();
+    return expr;
+}
+
+ast* parse_identifier()
+{
+    log_info("Parsing identifier...");
+    ast* expr = new_ast(AST_IDENTIFIER);
+    expr->data.identifier.name = g_cur->value;
+    next();
+    return expr;
+}
+
+ast* parse_binop()
+{
+    log_info("Parsing binary operation...");
+    ast* expr = new_ast(AST_BINOP);
+    expr->data.binop.lhs = parse_identifier();
+
+    if (!is_binop(g_cur->type))
+    {
+        throw("Expected binary operator (+, -, *, /). Got %s", get_token_type_string(g_cur->type));
+    };
+
+    return expr;
 }
 
 ast* parse_expression()
 {
     log_info("Parsing expression...");
-    ast* expr = new_ast(AST_CONSTANT);
-    expr->data.constant.value = atoi(g_cur->value);
-    next();
 
-    return expr;
+    // If the current token is a constant and the next token is a semicolon,
+    // parse the constant and return.
+    // e.g. const a = 5;
+    //                ^^
+    if (is_constant(g_cur->type) && expect_n(TOK_SEMICOLON, 1))
+    {
+        return parse_constant();
+    }
+    // If the current token is an identifier and the next token is a semicolon,
+    // parse the identifier and return.
+    // e.g. const a = 5;
+    //      const b = a;
+    //                ^^
+    else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_SEMICOLON, 1))
+    {
+        return parse_identifier();
+    }
+    else
+    {
+        return parse_binop();
+    }
 }
 
 ast* parse_assignment()
@@ -273,18 +338,18 @@ ast* parse_new_assignment()
     ast* expr = new_ast(AST_ASSIGN);
 
     // Assume we're assigning to a new variable.
-    require(TOK_VARDECL);
-    ast* vardecl = new_ast(AST_VARDECL);
+    require(TOK_DECLVAR);
+    ast* declvar = new_ast(AST_DECLVAR);
     bool is_const = strcmp(g_cur->value, "const") == 0;
-    vardecl->data.vardecl.is_const = is_const;
+    declvar->data.declvar.is_const = is_const;
     next();
 
     // Require a valid identifier
     require(TOK_IDENTIFIER);
     ast* ident = new_ast(AST_IDENTIFIER);
     ident->data.identifier.name = strdup(g_cur->value);
-    vardecl->data.vardecl.identifier = ident;
-    expr->data.assign.lhs = vardecl;
+    declvar->data.declvar.identifier = ident;
+    expr->data.assign.lhs = declvar;
     next();
 
     // Require an assignment operator `=`
@@ -297,17 +362,17 @@ ast* parse_new_assignment()
     return expr;
 }
 
+/* `stmt = assign | call | declvar | declfunc | declclass` */
 ast* parse_statement()
 {
     log_info("Parsing statement...");
-
     // Parse new assignment if the next token is an
     // identifier and the second-next token is
     // an assignment operator (`=`).
     // <const|let>  <ident>  =
     // 0            1        2
     // ^ current    ^ next   ^ second-next
-    if (expect(TOK_VARDECL))
+    if (expect(TOK_DECLVAR))
     {
         require_n(TOK_IDENTIFIER, 1);
         require_n(TOK_ASSIGN, 2);
@@ -324,7 +389,8 @@ ast* parse_statement()
         require_n(TOK_ASSIGN, 1);
         return parse_assignment();
     }
-    log_error("Invalid token: %s", get_token_type_string(g_cur->type));
+
+    log_error("Invalid token %s", get_token_type_string(g_cur->type));
     exit(1);
 }
 
@@ -344,7 +410,6 @@ ast* parse_body()
     {
         body->statements[body->count] = parse_statement();
         body->count++;
-
         require(TOK_SEMICOLON);
         next();
     }

@@ -17,13 +17,11 @@ typedef enum ast_node_t
     // Top level
     AST_PROGRAM,
     AST_BODY,
-    AST_STMT,
 
     // Statements
-    AST_VARDECL,
+    AST_DECLVAR,
     AST_RETURN,
     AST_ASSIGN,
-    AST_EXPR,
 
     // Expressions
     AST_IDENTIFIER,
@@ -69,11 +67,11 @@ AST_NODE(program, 8, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, 8, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(stmt, 12, AST_PROP(ast*, stmt));
 AST_NODE(expr, 12, AST_PROP(ast*, expr));
-AST_NODE(vardecl, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
+AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
-AST_NODE(binop, 4, AST_PROP(ast*, identifier) AST_PROP(bool, is_const) AST_PROP(ast_binop_t, op));
+AST_NODE(binop, 4, AST_PROP(ast*, lhs) AST_PROP(ast_binop_t, op) AST_PROP(ast*, rhs));
 
 #undef PAD
 #undef AST_PROP
@@ -93,7 +91,7 @@ struct ast
         struct ast_body body;
         struct ast_expr expr;
         struct ast_stmt stmt;
-        struct ast_vardecl vardecl;
+        struct ast_declvar declvar;
         struct ast_identifier identifier;
         struct ast_constant constant;
         struct ast_assign assign;
@@ -109,6 +107,17 @@ ast* new_ast(ast_node_t type);
 void free_ast(ast* node);
 void fmt_ast(char* buffer, ast* node);
 
+/* Parsing functions for each AST Node type */
+
+ast* parse_constant();
+ast* parse_binop();
+ast* parse_expression();
+ast* parse_assignment();
+ast* parse_new_assignment();
+ast* parse_statement();
+ast* parse_body();
+ast* parse_program();
+
 /* @brief Parses the incoming `buffer` string in two passes:
  *
  * 1. Tokenizes the buffer, constructing an array of tokens from the raw text.
@@ -116,6 +125,7 @@ void fmt_ast(char* buffer, ast* node);
  * 2. Parses the token array into an abstract syntax tree.
  *
  */
+
 ast* parse(char* buffer);
 
 #endif

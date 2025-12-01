@@ -45,10 +45,9 @@ char* get_token_type_string(enum token_type_t type)
     switch (type)
     {
         CASE(EOF)
-        CASE(INT)
-        CASE(STRING)
+        CASE(NUMBER)
         CASE(IDENTIFIER)
-        CASE(VARDECL)
+        CASE(DECLVAR)
         CASE(DEF)
         CASE(RETURN)
         CASE(IF)
@@ -85,7 +84,7 @@ void print_token(token_t* token)
     {
         return;
     }
-    log_debug("  [%s, %d] -> %s", get_token_type_string(token->type), token->pos, token->value);
+    log_debug("  [%s, %d, %d] -> %s", get_token_type_string(token->type), token->start, token->end, token->value);
 }
 
 bool is_whitespace(char c)
@@ -116,8 +115,8 @@ bool is_semicolon(char c)
 token_t* tokenize_number()
 {
     token_t* token = new_token();
-    token->pos = g_pos;
-    token->type = TOK_INT;
+    token->start = g_pos;
+    token->type = TOK_NUMBER;
 
     int count = 0;
     while (isdigit((unsigned char)g_buf[g_pos + count]))
@@ -128,15 +127,16 @@ token_t* tokenize_number()
     alloc_token(token, count + 1);
     memcpy(token->value, &g_buf[g_pos], count);
     token->value[count] = 0;
-
     g_pos += count;
+
+    token->end = g_pos;
     return token;
 }
 
 token_t* tokenize_keyword()
 {
     token_t* token = new_token();
-    token->pos = g_pos;
+    token->start = g_pos;
 
     int count = 0;
     while (is_keyword(g_buf[g_pos + count]))
@@ -149,11 +149,11 @@ token_t* tokenize_keyword()
 
     if (strcmp(token->value, "const") == 0)
     {
-        token->type = TOK_VARDECL;
+        token->type = TOK_DECLVAR;
     }
     else if (strcmp(token->value, "let") == 0)
     {
-        token->type = TOK_VARDECL;
+        token->type = TOK_DECLVAR;
     }
     else if (strcmp(token->value, "def") == 0)
     {
@@ -185,13 +185,15 @@ token_t* tokenize_keyword()
     }
     g_pos += count;
 
+    token->end = g_pos;
+
     return token;
 }
 
 token_t* tokenize_string()
 {
     token_t* token = new_token();
-    token->type = TOK_STRING;
+    token->type = TOK_NUMBER;
     g_pos++;
     return token;
 }
@@ -203,8 +205,9 @@ token_t* tokenize_operator()
     token->value[0] = g_buf[g_pos];
     token->value[1] = 0;
     token->type = (token_type_t)token->value[0];
-    token->pos = g_pos;
+    token->start = g_pos;
     g_pos++;
+    token->end = g_pos;
     return token;
 }
 
@@ -215,8 +218,9 @@ token_t* tokenize_semicolon()
     alloc_token(token, 2);
     token->value[0] = ';';
     token->value[1] = 0;
-    token->pos = g_pos;
+    token->start = g_pos;
     g_pos++;
+    token->end = g_pos;
     return token;
 }
 
@@ -255,7 +259,7 @@ token_t* tokenize_next()
     token->type = (token_type_t)c;
     token->value[0] = c;
     token->value[1] = 0;
-    token->pos = g_pos;
+    token->start = g_pos;
     g_pos++;
     return token;
 }
@@ -300,7 +304,7 @@ size_t tokenize(char* buffer, token_t* tokens)
     // Construct an EOF token at the end.
     tokens[token_count].type = TOK_EOF;
     tokens[token_count].value = NULL;
-    tokens[token_count].pos = g_pos;
+    tokens[token_count].start = g_pos;
     token_count++;
 
     // Free the temporary buffer of the input string
