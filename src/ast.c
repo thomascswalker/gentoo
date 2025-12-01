@@ -25,7 +25,7 @@ char* get_node_type_string(ast_node_t type)
     case AST_IDENTIFIER:
         return "IDENTIFIER";
     case AST_CONSTANT:
-        return "INT";
+        return "CONSTANT";
     case AST_VARDECL:
         return "VARDECL";
     case AST_ASSIGN:
@@ -97,7 +97,7 @@ void fmt_ast(char* buffer, ast* node)
         sprintf(buffer, "{\"type\": \"identifier\", \"name\": \"%s\"}", node->data.identifier.name);
         break;
     case AST_CONSTANT:
-        sprintf(buffer, "{\"type\": \"int\", \"number\": %d}", node->data.number.number);
+        sprintf(buffer, "{\"type\": \"constant\", \"value\": %d}", node->data.constant.value);
         break;
     case AST_VARDECL:
         char* ident_buffer = (char*)calloc(1, 512);
@@ -237,7 +237,7 @@ ast* parse_expression()
 {
     log_info("Parsing expression...");
     ast* expr = new_ast(AST_CONSTANT);
-    expr->data.number.number = atoi(g_cur->value);
+    expr->data.constant.value = atoi(g_cur->value);
     next();
 
     return expr;

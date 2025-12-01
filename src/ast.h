@@ -31,6 +31,11 @@ typedef enum ast_node_t
     AST_CONSTANT,
 } ast_node_t;
 
+typedef enum ast_constant_t
+{
+    CONST_INT
+} ast_constant_t;
+
 /* Enumeration for the binary operation types. */
 typedef enum ast_binop_t
 {
@@ -66,7 +71,7 @@ AST_NODE(stmt, 12, AST_PROP(ast*, stmt));
 AST_NODE(expr, 12, AST_PROP(ast*, expr));
 AST_NODE(vardecl, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
-AST_NODE(number, 12, AST_PROP(int, number));
+AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop, 4, AST_PROP(ast*, identifier) AST_PROP(bool, is_const) AST_PROP(ast_binop_t, op));
 
@@ -90,7 +95,7 @@ struct ast
         struct ast_stmt stmt;
         struct ast_vardecl vardecl;
         struct ast_identifier identifier;
-        struct ast_number number;
+        struct ast_constant constant;
         struct ast_assign assign;
         struct ast_binop binop;
     } data;
