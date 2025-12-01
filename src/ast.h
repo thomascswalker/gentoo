@@ -3,8 +3,8 @@
 
 #include <string.h>
 
-#include "lex.h"
 #include "log.h"
+#include "tokenize.h"
 
 static token_t* g_tcur = NULL;
 static size_t g_tpos = 0;
@@ -52,19 +52,19 @@ struct ast
     {
         struct ast_program
         {
-            ast* body;
+            ast** body; // Array of pointers to ast
             int count;
         } ast_program;
         struct ast_body
         {
-            ast* statements; // Array of statements
+            ast** statements; // Array of pointers to ast
             int count;
         } ast_body;
         struct ast_identifier
         {
             char* name;
             int __unused0;
-        } ast_var;
+        } ast_identifier;
         struct ast_int
         {
             int number;
@@ -145,7 +145,7 @@ void fmt_ast(char* buffer, ast* node)
             {
                 continue;
             }
-            fmt_ast(temp, &node->data.ast_program.body[i]);
+            fmt_ast(temp, node->data.ast_program.body[i]);
             bodies = strjoin(bodies, &cap, temp, i > 0);
             free(temp);
         }
@@ -171,7 +171,7 @@ void fmt_ast(char* buffer, ast* node)
             {
                 continue;
             }
-            fmt_ast(temp, &node->data.ast_body.statements[i]);
+            fmt_ast(temp, node->data.ast_body.statements[i]);
             stmts = strjoin(stmts, &cap, temp, i > 0);
             free(temp);
         }
@@ -181,15 +181,15 @@ void fmt_ast(char* buffer, ast* node)
         break;
     }
     case AST_IDENTIFIER:
-        sprintf(buffer, "{\"type\": \"identifier\", \"name\": \"%s\"}", node->data.ast_var.name);
+        sprintf(buffer, "{\"type\": \"identifier\", \"name\": \"%s\"}", node->data.ast_identifier.name);
         break;
     case AST_INT:
         sprintf(buffer, "{\"type\": \"int\", \"number\": %d}", node->data.ast_int.number);
         break;
     case AST_ASSIGN:
     {
-        char* lhs_buffer = (char*)malloc(512);
-        char* rhs_buffer = (char*)malloc(512);
+        char* lhs_buffer = (char*)calloc(1, 512);
+        char* rhs_buffer = (char*)calloc(1, 512);
         if (!lhs_buffer || !rhs_buffer)
             return;
         fmt_ast(lhs_buffer, node->data.ast_assign.lhs);
@@ -208,7 +208,60 @@ void fmt_ast(char* buffer, ast* node)
 
 ast* new_ast()
 {
-    return (ast*)malloc(sizeof(ast));
+    return (ast*)calloc(1, sizeof(ast));
+}
+
+void free_ast(ast* node)
+{
+    if (!node)
+    {
+        return;
+    }
+
+    // Free sub-nodes
+    switch (node->type)
+    {
+    case AST_PROGRAM:
+    {
+        if (node->data.ast_program.body)
+        {
+            for (int i = 0; i < node->data.ast_program.count; i++)
+            {
+                free_ast(node->data.ast_program.body[i]);
+            }
+            free(node->data.ast_program.body);
+        }
+        break;
+    }
+    case AST_BODY:
+    {
+        if (node->data.ast_body.statements)
+        {
+            for (int i = 0; i < node->data.ast_body.count; i++)
+            {
+                free_ast(node->data.ast_body.statements[i]);
+            }
+            free(node->data.ast_body.statements);
+        }
+        break;
+    }
+    case AST_IDENTIFIER:
+    {
+        free(node->data.ast_identifier.name);
+        break;
+    }
+    case AST_ASSIGN:
+    {
+        free_ast(node->data.ast_assign.lhs);
+        free_ast(node->data.ast_assign.rhs);
+        break;
+    }
+    default:
+        break;
+    }
+
+    // Free the node itself
+    free(node);
 }
 
 bool expect(token_type_t type)
@@ -256,7 +309,8 @@ ast* parse_assignment()
     // Parse and consume the name
     ast* lhs = new_ast();
     lhs->type = AST_IDENTIFIER;
-    lhs->data.ast_var.name = g_tcur->value;
+    // Duplicate the token value so the AST owns its own copy
+    lhs->data.ast_identifier.name = strdup(g_tcur->value);
     expr->data.ast_assign.lhs = lhs;
     next();
 
@@ -303,14 +357,15 @@ ast* parse_body()
 
     ast* expr = new_ast();
     expr->type = AST_BODY;
-    expr->data.ast_body.statements = malloc(sizeof(ast) * 32);
 
-    expr->data.ast_body.count = 0;
+    ast_body* body = &expr->data.ast_body;
+    body->statements = calloc(32, sizeof(ast*));
+
+    body->count = 0;
     while (can_continue())
     {
-        ast* stmt = parse_statement();
-        expr->data.ast_body.statements[expr->data.ast_body.count] = *stmt;
-        expr->data.ast_body.count++;
+        body->statements[body->count] = parse_statement();
+        body->count++;
 
         require(TOK_SEMICOLON);
         next();
@@ -325,15 +380,16 @@ ast* parse_program()
 
     ast* expr = new_ast();
     expr->type = AST_PROGRAM;
-    expr->data.ast_program.body = malloc(sizeof(ast) * 32);
+
+    ast_program* program = &expr->data.ast_program;
+    program->body = calloc(32, sizeof(ast*));
 
     // Parse each top-level body
-    expr->data.ast_program.count = 0;
+    program->count = 0;
     while (can_continue())
     {
-        ast* body = parse_body();
-        expr->data.ast_program.body[expr->data.ast_program.count] = *body;
-        expr->data.ast_program.count++;
+        program->body[program->count] = parse_body();
+        program->count++;
     }
 
     return expr;
@@ -341,30 +397,39 @@ ast* parse_program()
 
 ast* parse()
 {
-    // Tokenize the string buffer and construct a set of tokens.
-    // Assuming a maximum of TOKEN_COUNT tokens.
-    token_t tokens[TOKEN_COUNT];
-
-    log_info("Lexing tokens...");
+    // Tokenize the string buffer, returning an array of tokens.
+    // - Assuming `g_lbuf` and `g_lpos` are initialized elsewhere.
+    // - Assuming a maximum of `TOKEN_COUNT` tokens.
+    log_info("Tokenizing input...");
+    token_t* tokens = calloc(TOKEN_COUNT, sizeof(token_t));
     size_t count = tokenize(tokens);
-
     log_info("Found %d tokens.", count);
 
+#ifdef DEBUG
     for (int i = 0; i < count; i++)
     {
         print_token(&tokens[i]);
     }
+#endif
 
+    // Start with the first token.
     g_tcur = &tokens[0];
+
+    // Construct an abstract syntax tree from the token array.
     ast* program = parse_program();
     char program_buffer[1024];
     fmt_ast(program_buffer, program);
     log_info("Program: %s\n", program_buffer);
 
+    // Once all AST nodes are constructed, free per-token value buffers
+    // and then free the token array itself.
     for (int i = 0; i < count; i++)
     {
         free_token(&tokens[i]);
     }
+    free(tokens);
+
+    // Return the root-level program AST node.
     return program;
 }
 

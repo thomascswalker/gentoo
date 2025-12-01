@@ -6,6 +6,7 @@
 
 static void log_debug(char* format, ...)
 {
+#ifdef _DEBUG
     printf("%s", "\033[30m[DBG] - ");
 
     va_list args;
@@ -15,6 +16,7 @@ static void log_debug(char* format, ...)
     printf("%s", "\033[0m\n");
 
     va_end(args);
+#endif
 }
 
 static void log_info(char* format, ...)

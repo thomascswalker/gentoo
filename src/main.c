@@ -82,6 +82,8 @@ int main(int argc, char** argv)
     log_debug("Parsing:\n%s", g_lbuf);
     ast* root_node = parse();
 
+    free_ast(root_node);
+
     // Free the lex buffer
     free(g_lbuf);
 
