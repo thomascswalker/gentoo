@@ -1,0 +1,380 @@
+#ifndef TOKENIZE_H
+#define TOKENIZE_H
+
+#include <ctype.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "log.h"
+
+static int g_lpos = 0;
+static char* g_lbuf = NULL;
+
+#define TOKEN_COUNT 1024
+
+#define KW_CONST "const"
+#define KW_LET "let"
+#define KW_DEF "def"
+#define KW_RETURN "return"
+#define KW_IF "if"
+#define KW_ELSE "else"
+#define KW_FOR "for"
+#define KW_WHILE "while"
+
+enum token_type_t
+{
+    TOK_EOF = 0,
+    TOK_INT,
+    TOK_STRING,
+
+    TOK_NAME = 128,
+    TOK_CONST,
+    TOK_LET,
+    TOK_DEF,
+    TOK_RETURN,
+    TOK_IF,
+    TOK_ELSE,
+    TOK_FOR,
+    TOK_WHILE,
+
+    // Operators
+    TOK_ASSIGN = '=',
+    TOK_ADD = '+',
+    TOK_MIN = '-',
+    TOK_MUL = '*',
+    TOK_DIV = '/',
+
+    // Whitespace
+    TOK_SPACE = ' ',     // Space
+    TOK_TAB = '\t',      // Tab
+    TOK_NEWLINE = '\n',  // New line, 0x0A
+    TOK_CARRIAGE = '\r', // Carriage return, 0x0D
+    TOK_COLON = ':',     // Colon
+    TOK_SEMICOLON = ';', // Semicolon
+    TOK_QUOTE = '"',     // Quote
+    TOK_L_PAREN = '(',
+    TOK_R_PAREN = ')',
+    TOK_L_SQUARE = '[',  // Left square bracket
+    TOK_R_SQUARE = ']',  // Right square bracket
+    TOK_L_BRACKET = '{', // Left curly bracket
+    TOK_R_BRACKET = '}', // Right curly bracket
+
+    TOK_UNKNOWN = 255,
+};
+
+struct token_t
+{
+    enum token_type_t type;
+    char* value;
+    int pos;
+
+    void (*free)(struct token_t*);
+    void (*alloc)(struct token_t*, size_t);
+};
+
+void free_token(struct token_t* token)
+{
+    if (token->value)
+    {
+        free(token->value);
+        token->value = NULL;
+    }
+}
+
+void alloc_token(struct token_t* token, size_t size)
+{
+    if (token)
+    {
+        free_token(token);
+    }
+    token->value = (char*)calloc(1, size);
+}
+
+typedef struct token_t token_t;
+typedef enum token_type_t token_type_t;
+
+#define CASE(t)                                                                                                        \
+    case t:                                                                                                            \
+        return #t;
+static char* get_token_type_string(token_type_t type)
+{
+    switch (type)
+    {
+        CASE(TOK_EOF)
+        CASE(TOK_INT)
+        CASE(TOK_STRING)
+        CASE(TOK_NAME)
+        CASE(TOK_CONST)
+        CASE(TOK_LET)
+        CASE(TOK_DEF)
+        CASE(TOK_RETURN)
+        CASE(TOK_IF)
+        CASE(TOK_ELSE)
+        CASE(TOK_FOR)
+        CASE(TOK_WHILE)
+        CASE(TOK_ASSIGN)
+        CASE(TOK_ADD)
+        CASE(TOK_MIN)
+        CASE(TOK_MUL)
+        CASE(TOK_DIV)
+        CASE(TOK_SPACE)
+        CASE(TOK_TAB)
+        CASE(TOK_NEWLINE)
+        CASE(TOK_CARRIAGE)
+        CASE(TOK_COLON)
+        CASE(TOK_SEMICOLON)
+        CASE(TOK_QUOTE)
+        CASE(TOK_L_PAREN)
+        CASE(TOK_R_PAREN)
+        CASE(TOK_L_SQUARE)
+        CASE(TOK_R_SQUARE)
+        CASE(TOK_L_BRACKET)
+        CASE(TOK_R_BRACKET)
+        CASE(TOK_UNKNOWN)
+    }
+    return "UNDEFINED";
+}
+
+void print_token(token_t* token)
+{
+    if (token->type == 0 || token->value == "")
+    {
+        return;
+    }
+    log_debug("  [%s, %d] -> %s", get_token_type_string(token->type), token->pos, token->value);
+}
+
+token_t* new_token()
+{
+    token_t* token = calloc(1, sizeof(token_t));
+    token->free = &free_token;
+    token->alloc = &alloc_token;
+    return token;
+}
+
+bool is_whitespace(char c)
+{
+    return c == TOK_SPACE || c == TOK_TAB || c == TOK_NEWLINE || c == TOK_CARRIAGE;
+}
+
+bool is_keyword(char c)
+{
+    return isalnum(c) || c == '_';
+}
+
+bool is_string(char c)
+{
+    return c == '"';
+}
+
+bool is_operator(char c)
+{
+    return c == '+' || c == '-' || c == '*' || c == '/' || c == '=';
+}
+
+bool is_semicolon(char c)
+{
+    return c == ';';
+}
+
+token_t* tokenize_number()
+{
+    token_t* token = new_token();
+    token->pos = g_lpos;
+    token->type = TOK_INT;
+
+    // Count the number of digits in this number until we hit a
+    // non-digit char.
+    int count = 0;
+    while (isdigit(g_lbuf[g_lpos + count]))
+    {
+        count++;
+    }
+
+    token->alloc(token, count + 1);
+    memcpy(token->value, &g_lbuf[g_lpos], count);
+    token->value[count] = 0;
+
+    g_lpos += count;
+    return token;
+}
+
+#define KW(name)                                                                                                       \
+    (memcmp(token->value, KW_##name, count))                                                                           \
+    {                                                                                                                  \
+        token->type = TOK_##name;                                                                                      \
+    }
+
+token_t* tokenize_keyword()
+{
+    token_t* token = new_token();
+    token->pos = g_lpos;
+
+    int count = 0;
+    while (is_keyword(g_lbuf[g_lpos + count]))
+    {
+        count++;
+    }
+    token->alloc(token, count + 1);
+    memcpy(token->value, &g_lbuf[g_lpos], count);
+    token->value[count] = 0;
+
+    if (strcmp(token->value, "const") == 0)
+    {
+        token->type = TOK_CONST;
+    }
+    else if (strcmp(token->value, "let") == 0)
+    {
+        token->type = TOK_LET;
+    }
+    else if (strcmp(token->value, "def") == 0)
+    {
+        token->type = TOK_DEF;
+    }
+    else if (strcmp(token->value, "return") == 0)
+    {
+        token->type = TOK_RETURN;
+    }
+    else if (strcmp(token->value, "if") == 0)
+    {
+        token->type = TOK_IF;
+    }
+    else if (strcmp(token->value, "else") == 0)
+    {
+        token->type = TOK_ELSE;
+    }
+    else if (strcmp(token->value, "for") == 0)
+    {
+        token->type = TOK_FOR;
+    }
+    else if (strcmp(token->value, "while") == 0)
+    {
+        token->type = TOK_WHILE;
+    }
+    else
+    {
+        token->type = TOK_NAME;
+    }
+    g_lpos += count;
+
+    return token;
+}
+
+token_t* tokenize_string()
+{
+    token_t* token = new_token();
+    token->type = TOK_STRING;
+    g_lpos++;
+    return token;
+}
+
+token_t* tokenize_operator()
+{
+    token_t* token = new_token();
+
+    // Store single char in 2-byte value
+    token->alloc(token, 2);
+    token->value[0] = g_lbuf[g_lpos];
+    token->value[1] = 0;
+
+    // Store type from the value itself
+    token->type = (token_type_t)token->value[0];
+
+    // Store and increment position
+    token->pos = g_lpos;
+    g_lpos++;
+    return token;
+}
+
+token_t* tokenize_semicolon()
+{
+    token_t* token = new_token();
+    token->type = TOK_SEMICOLON;
+    token->alloc(token, 2);
+    token->value[0] = ';';
+    token->value[1] = 0;
+    token->pos = g_lpos;
+    g_lpos++;
+    return token;
+}
+
+token_t* tokenize_next()
+{
+    // Skip whitespace
+    while (is_whitespace(g_lbuf[g_lpos]))
+    {
+        g_lpos++;
+    }
+
+    char c = g_lbuf[g_lpos];
+
+    // Integers
+    if (isdigit(c))
+    {
+        return tokenize_number();
+    }
+    // Keywords
+    if (isalpha(c))
+    {
+        return tokenize_keyword();
+    }
+    // Strings (within quotes)
+    if (is_string(c))
+    {
+        return tokenize_string();
+    }
+    // Operators
+    if (is_operator(c))
+    {
+        return tokenize_operator();
+    }
+    // Semicolons
+    if (is_semicolon(c))
+    {
+        return tokenize_semicolon();
+    }
+
+    token_t* token = new_token();
+    token->type = c;
+    token->alloc(token, 2);
+    token->value[0] = c;
+    token->value[1] = 0;
+    token->pos = g_lpos;
+    g_lpos++;
+    return token;
+}
+
+size_t tokenize(token_t* tokens)
+{
+    // Reset lexer position
+    g_lpos = 0;
+
+    size_t token_count = 0;
+    while (g_lbuf[g_lpos] != '\0')
+    {
+        token_t* t = tokenize_next();
+        if (!t)
+        {
+            break;
+        }
+        // Copy token struct into provided array (shallow copy of value pointer)
+        tokens[token_count] = *t;
+        // free the temporary token struct but keep its value pointer (copied)
+        free(t);
+        token_count++;
+        if (token_count >= TOKEN_COUNT - 1)
+            break;
+    }
+
+    // Append EOF token
+    tokens[token_count].type = TOK_EOF;
+    tokens[token_count].value = NULL;
+    tokens[token_count].pos = g_lpos;
+    token_count++;
+    return token_count;
+}
+
+#endif
