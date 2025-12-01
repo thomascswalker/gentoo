@@ -8,6 +8,9 @@
         "type_traits": "c",
         "xmemory": "c",
         "xutility": "c",
-        "xtr1common": "c"
+        "xtr1common": "c",
+        "compare": "c",
+        "tuple": "c",
+        "utility": "c"
     }
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # Arguments:
 # -d | --debug: Enables GCC debug mode and defines the '_DEBUG' macro.
@@ -22,7 +22,23 @@ fi
 
 # Compile with GCC
 COMPILER_BIN="./build/compiler.exe"
-gcc ${CFLAGS[@]} ./src/main.c -o "${COMPILER_BIN}"
+gcc ${CFLAGS[@]} ./src/*.c -o "${COMPILER_BIN}"
 
-# Run the the compiler.
-"${COMPILER_BIN}" ./examples/file.c8
+# Determine input file (positional argument). If none given, use the example.
+INPUT_FILE="${1:-}"
+if [ -z "${INPUT_FILE}" ]; then
+    INPUT_FILE="./examples/program.t"
+else
+    # If the provided path exists use it, otherwise try under ./examples
+    if [ -f "${INPUT_FILE}" ]; then
+        : # use as-is
+    elif [ -f "./examples/${INPUT_FILE}" ]; then
+        INPUT_FILE="./examples/${INPUT_FILE}"
+    else
+        echo "Input file '${INPUT_FILE}' not found." >&2
+        exit 2
+    fi
+fi
+
+# Run the compiler with the chosen input file
+"${COMPILER_BIN}" "${INPUT_FILE}"

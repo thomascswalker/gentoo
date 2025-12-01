@@ -8,7 +8,12 @@
  *   - File I/O
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+
 #include "ast.h"
+#include "log.h"
 
 char* read_file(const char* filename)
 {
@@ -77,15 +82,15 @@ int main(int argc, char** argv)
     // 2. Get the file size.
     // 3. Read the file data into a buffer.
     // 4. Close the file.
-    g_lbuf = read_file(file_name);
+    char* buf = read_file(file_name);
 
-    log_debug("Parsing:\n%s", g_lbuf);
-    ast* root_node = parse();
+    log_debug("Parsing:\n%s", buf);
+    ast* root_node = parse(buf);
 
     free_ast(root_node);
 
-    // Free the lex buffer
-    free(g_lbuf);
+    // Free the file content buffer
+    free(buf);
 
     return 0;
 }
