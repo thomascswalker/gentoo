@@ -40,31 +40,35 @@ enum ast_tag
     AST_MUL,
 };
 
-// AST Node data structures
-
 // Base AST Node
 
 struct ast
 {
     enum ast_tag type;
 
+    // AST Node data structures
+
     union data
     {
         struct ast_program
         {
             ast* body;
+            int count;
         } ast_program;
         struct ast_body
         {
-            ast* items; // Array of items
+            ast* statements; // Array of statements
+            int count;
         } ast_body;
         struct ast_identifier
         {
             char* name;
+            int __unused0;
         } ast_var;
         struct ast_int
         {
             int number;
+            int __unused0;
         } ast_int;
         struct ast_assign
         {
@@ -82,28 +86,122 @@ struct ast
             ast* rhs;
         } ast_mul;
     } data;
+
+    size_t start;
+    size_t end;
 };
+
+static char* strjoin(char* buf, size_t* cap, const char* piece, int prepend_comma)
+{
+    if (buf == NULL)
+    {
+        *cap = strlen(piece) + 64;
+        buf = (char*)malloc(*cap);
+        if (!buf)
+        {
+            return NULL;
+        }
+        buf[0] = '\0';
+    }
+
+    size_t cur_len = strlen(buf);
+    size_t add_len = strlen(piece) + (prepend_comma ? 2 : 0) + 1;
+    if (cur_len + add_len > *cap)
+    {
+        *cap = cur_len + add_len + 256;
+        char* tmp = (char*)realloc(buf, *cap);
+        if (!tmp)
+        {
+            return buf;
+        }
+        buf = tmp;
+    }
+    if (prepend_comma && cur_len > 0)
+    {
+        strcat(buf, ", ");
+    }
+    strcat(buf, piece);
+    return buf;
+}
 
 void fmt_ast(char* buffer, ast* node)
 {
     switch (node->type)
     {
+    case AST_PROGRAM:
+    {
+        size_t cap = 1024;
+        char* bodies = (char*)malloc(cap);
+        if (!bodies)
+        {
+            return;
+        }
+        bodies[0] = '\0';
+
+        for (int i = 0; i < node->data.ast_program.count; i++)
+        {
+            char* temp = (char*)malloc(1024);
+            if (!temp)
+            {
+                continue;
+            }
+            fmt_ast(temp, &node->data.ast_program.body[i]);
+            bodies = strjoin(bodies, &cap, temp, i > 0);
+            free(temp);
+        }
+
+        sprintf(buffer, "{\"type\": \"program\", \"body\": [%s]}", bodies);
+        free(bodies);
+        break;
+    }
+    case AST_BODY:
+    {
+        size_t cap = 512;
+        char* stmts = (char*)malloc(cap);
+        if (!stmts)
+        {
+            return;
+        }
+        stmts[0] = '\0';
+
+        for (int i = 0; i < node->data.ast_body.count; i++)
+        {
+            char* temp = (char*)malloc(512);
+            if (!temp)
+            {
+                continue;
+            }
+            fmt_ast(temp, &node->data.ast_body.statements[i]);
+            stmts = strjoin(stmts, &cap, temp, i > 0);
+            free(temp);
+        }
+
+        sprintf(buffer, "{\"type\": \"body\", \"statements\": [%s]}", stmts);
+        free(stmts);
+        break;
+    }
     case AST_IDENTIFIER:
-        /* Directly access the union member to avoid type/name shadowing */
         sprintf(buffer, "{\"type\": \"identifier\", \"name\": \"%s\"}", node->data.ast_var.name);
         break;
     case AST_INT:
         sprintf(buffer, "{\"type\": \"int\", \"number\": %d}", node->data.ast_int.number);
         break;
     case AST_ASSIGN:
-        char* lhs_buffer;
-        char* rhs_buffer;
+    {
+        char* lhs_buffer = (char*)malloc(512);
+        char* rhs_buffer = (char*)malloc(512);
+        if (!lhs_buffer || !rhs_buffer)
+            return;
         fmt_ast(lhs_buffer, node->data.ast_assign.lhs);
         fmt_ast(rhs_buffer, node->data.ast_assign.rhs);
         sprintf(buffer, "{\"type\": \"assign\", \"lhs\": %s, \"rhs\": %s}", lhs_buffer, rhs_buffer);
+        free(lhs_buffer);
+        free(rhs_buffer);
         break;
+    }
     case AST_ADD:
     case AST_MUL:
+        sprintf(buffer, "{\"type\": \"op\"}");
         break;
     }
 }
@@ -133,6 +231,11 @@ bool peek(token_type_t type)
     return (g_tcur + 1)->type == type;
 }
 
+bool can_continue()
+{
+    return g_tcur != NULL && g_tcur->type != 0;
+}
+
 void next()
 {
     g_tcur++;
@@ -142,6 +245,8 @@ void next()
 
 ast* parse_assignment()
 {
+    log_info("Parsing assignment...");
+
     ast* expr = new_ast();
     expr->type = AST_ASSIGN;
 
@@ -169,13 +274,14 @@ ast* parse_assignment()
     rhs->data.ast_int.number = atoi(g_tcur->value);
     expr->data.ast_assign.rhs = rhs;
 
+    next();
+
     return expr;
 }
 
-ast* parse_expression()
+ast* parse_statement()
 {
-    log_info("Parsing expression...");
-    ast* expr = new_ast();
+    log_info("Parsing statement...");
 
     // Expect either 'const' or 'let'
     if (!(expect(TOK_CONST) || expect(TOK_LET)))
@@ -193,14 +299,44 @@ ast* parse_expression()
 
 ast* parse_body()
 {
+    log_info("Parsing body...");
+
     ast* expr = new_ast();
     expr->type = AST_BODY;
+    expr->data.ast_body.statements = malloc(sizeof(ast) * 32);
+
+    expr->data.ast_body.count = 0;
+    while (can_continue())
+    {
+        ast* stmt = parse_statement();
+        expr->data.ast_body.statements[expr->data.ast_body.count] = *stmt;
+        expr->data.ast_body.count++;
+
+        require(TOK_SEMICOLON);
+        next();
+    }
+
+    return expr;
 }
 
 ast* parse_program()
 {
+    log_info("Parsing program...");
+
     ast* expr = new_ast();
     expr->type = AST_PROGRAM;
+    expr->data.ast_program.body = malloc(sizeof(ast) * 32);
+
+    // Parse each top-level body
+    expr->data.ast_program.count = 0;
+    while (can_continue())
+    {
+        ast* body = parse_body();
+        expr->data.ast_program.body[expr->data.ast_program.count] = *body;
+        expr->data.ast_program.count++;
+    }
+
+    return expr;
 }
 
 ast* parse()
@@ -220,11 +356,11 @@ ast* parse()
     }
 
     g_tcur = &tokens[0];
-    ast* expr = parse_expression();
-    char expr_buffer[1024];
-    fmt_ast(expr_buffer, expr);
-    log_debug("%s\n", expr_buffer);
-    return expr;
+    ast* program = parse_program();
+    char program_buffer[1024];
+    fmt_ast(program_buffer, program);
+    log_info("Program: %s\n", program_buffer);
+    return program;
 }
 
 #endif

@@ -7,4 +7,4 @@ if [ ! -d "$BUILD_DIRECTORY" ]; then
 fi
 
 gcc ./src/main.c -o ./build/compiler.exe
-./build/compiler.exe ./examples/file.c8
+

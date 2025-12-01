@@ -42,6 +42,10 @@ enum token_type_t
 
     // Operators
     TOK_ASSIGN = '=',
+    TOK_ADD = '+',
+    TOK_MIN = '-',
+    TOK_MUL = '*',
+    TOK_DIV = '/',
 
     // Whitespace
     TOK_SPACE = ' ',     // Space
@@ -91,6 +95,10 @@ static char* get_token_type_string(token_type_t type)
         CASE(TOK_FOR)
         CASE(TOK_WHILE)
         CASE(TOK_ASSIGN)
+        CASE(TOK_ADD)
+        CASE(TOK_MIN)
+        CASE(TOK_MUL)
+        CASE(TOK_DIV)
         CASE(TOK_SPACE)
         CASE(TOK_TAB)
         CASE(TOK_NEWLINE)
@@ -106,7 +114,7 @@ static char* get_token_type_string(token_type_t type)
         CASE(TOK_R_BRACKET)
         CASE(TOK_UNKNOWN)
     }
-    return "";
+    return "UNDEFINED";
 }
 
 void print_token(token_t* token)
