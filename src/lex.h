@@ -70,7 +70,20 @@ struct token_t
     enum token_type_t type;
     char* value;
     int pos;
+
+    void (*free)(struct token_t*);
+    void (*alloc)(struct token_t*, size_t);
 };
+
+void free_token(struct token_t* token)
+{
+    free(token->value);
+}
+
+void alloc_token(struct token_t* token, size_t size)
+{
+    token->value = (char*)malloc(size);
+}
 
 typedef struct token_t token_t;
 typedef enum token_type_t token_type_t;
@@ -126,6 +139,14 @@ void print_token(token_t* token)
     log_debug("  [%s, %d] -> %s", get_token_type_string(token->type), token->pos, token->value);
 }
 
+token_t new_token()
+{
+    token_t token;
+    token.free = &free_token;
+    token.alloc = &alloc_token;
+    return token;
+}
+
 bool is_whitespace(char c)
 {
     return c == TOK_SPACE || c == TOK_TAB || c == TOK_NEWLINE || c == TOK_CARRIAGE;
@@ -153,7 +174,7 @@ bool is_semicolon(char c)
 
 token_t lex_number()
 {
-    token_t token;
+    token_t token = new_token();
     token.pos = g_lpos;
     token.type = TOK_INT;
 
@@ -165,7 +186,7 @@ token_t lex_number()
         count++;
     }
 
-    token.value = (char*)malloc(count + 1);
+    token.alloc(&token, 2);
     memcpy(token.value, &g_lbuf[g_lpos], count);
     token.value[count] = 0;
 
@@ -181,7 +202,7 @@ token_t lex_number()
 
 token_t lex_keyword()
 {
-    token_t token;
+    token_t token = new_token();
     token.pos = g_lpos;
 
     int count = 0;
@@ -189,7 +210,7 @@ token_t lex_keyword()
     {
         count++;
     }
-    token.value = (char*)malloc(count + 1);
+    token.alloc(&token, count + 1);
     memcpy(token.value, &g_lbuf[g_lpos], count);
     token.value[count] = 0;
 
@@ -238,7 +259,7 @@ token_t lex_keyword()
 
 token_t lex_string()
 {
-    token_t token;
+    token_t token = new_token();
     token.type = TOK_STRING;
     g_lpos++;
     return token;
@@ -246,10 +267,10 @@ token_t lex_string()
 
 token_t lex_operator()
 {
-    token_t token;
+    token_t token = new_token();
 
     // Store single char in 2-byte value
-    token.value = (char*)malloc(2);
+    token.alloc(&token, 2);
     token.value[0] = g_lbuf[g_lpos];
     token.value[1] = 0;
 
@@ -264,9 +285,11 @@ token_t lex_operator()
 
 token_t lex_semicolon()
 {
-    token_t token;
+    token_t token = new_token();
     token.type = TOK_SEMICOLON;
-    token.value = (char*)";";
+    token.alloc(&token, 2);
+    token.value[0] = ';';
+    token.value[1] = 0;
     token.pos = g_lpos;
     g_lpos++;
     return token;
@@ -308,9 +331,9 @@ token_t lex_next()
         return lex_semicolon();
     }
 
-    token_t token;
+    token_t token = new_token();
     token.type = c;
-    token.value = (char*)malloc(2);
+    token.alloc(&token, 2);
     token.value[0] = c;
     token.value[1] = 0;
     token.pos = g_lpos;
@@ -318,7 +341,7 @@ token_t lex_next()
     return token;
 }
 
-size_t lex(token_t* tokens)
+size_t tokenize(token_t* tokens)
 {
     memset(tokens, 0, sizeof(token_t) * TOKEN_COUNT);
     token_t* current_token = tokens;

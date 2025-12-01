@@ -341,12 +341,12 @@ ast* parse_program()
 
 ast* parse()
 {
-    // Lexically deconstruct the string buffer and construct a set of tokens.
+    // Tokenize the string buffer and construct a set of tokens.
     // Assuming a maximum of TOKEN_COUNT tokens.
     token_t tokens[TOKEN_COUNT];
 
     log_info("Lexing tokens...");
-    size_t count = lex(tokens);
+    size_t count = tokenize(tokens);
 
     log_info("Found %d tokens.", count);
 
@@ -360,6 +360,11 @@ ast* parse()
     char program_buffer[1024];
     fmt_ast(program_buffer, program);
     log_info("Program: %s\n", program_buffer);
+
+    for (int i = 0; i < count; i++)
+    {
+        free_token(&tokens[i]);
+    }
     return program;
 }
 

@@ -79,8 +79,7 @@ int main(int argc, char** argv)
     // 4. Close the file.
     g_lbuf = read_file(file_name);
 
-    log_debug("Lexing:\n%s", g_lbuf);
-
+    log_debug("Parsing:\n%s", g_lbuf);
     ast* root_node = parse();
 
     // Free the lex buffer
