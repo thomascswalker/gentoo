@@ -1,3 +1,3 @@
 source ./run.sh -d
 
-valgrind  --leak-check=full -s ./build/compiler.exe ./examples/file.c8
+valgrind  --leak-check=full --show-leak-kinds=all -s ./build/compiler.exe ./examples/file.c8
