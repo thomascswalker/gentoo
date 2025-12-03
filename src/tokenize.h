@@ -23,7 +23,7 @@ typedef enum token_type_t
 
     TOK_ASSIGN = '=',
     TOK_ADD = '+',
-    TOK_MIN = '-',
+    TOK_SUB = '-',
     TOK_MUL = '*',
     TOK_DIV = '/',
 
@@ -54,7 +54,7 @@ typedef struct token_t
 
 static bool is_binop(token_type_t type)
 {
-    return type == TOK_ADD || type == TOK_MIN || type == TOK_MUL || type == TOK_DIV;
+    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL || type == TOK_DIV;
 }
 
 static bool is_constant(token_type_t type)

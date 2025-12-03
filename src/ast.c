@@ -114,8 +114,8 @@ void fmt_ast(char* buffer, ast* node)
         break;
     case AST_ASSIGN:
     {
-        char* lhs_buffer = (char*)calloc(1, 512);
-        char* rhs_buffer = (char*)calloc(1, 512);
+        char* lhs_buffer = (char*)malloc(512);
+        char* rhs_buffer = (char*)malloc(512);
         if (!lhs_buffer || !rhs_buffer)
         {
             return;
@@ -129,7 +129,14 @@ void fmt_ast(char* buffer, ast* node)
         break;
     }
     case AST_BINOP:
-        sprintf(buffer, "{\"type\": \"op\"}");
+        char* lhs_buffer = (char*)malloc(512);
+        char* rhs_buffer = (char*)malloc(512);
+        fmt_ast(lhs_buffer, node->data.binop.lhs);
+        fmt_ast(rhs_buffer, node->data.binop.rhs);
+        sprintf(buffer, "{\"type\": \"%s\", \"op\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
+                get_node_type_string(node->type), binop_to_string(node->data.binop.op), lhs_buffer, rhs_buffer);
+        free(lhs_buffer);
+        free(rhs_buffer);
         break;
     }
 }
@@ -180,6 +187,10 @@ void free_ast(ast* node)
     case AST_ASSIGN:
         free_ast(node->data.assign.lhs);
         free_ast(node->data.assign.rhs);
+        break;
+    case AST_BINOP:
+        free_ast(node->data.binop.lhs);
+        free_ast(node->data.binop.rhs);
         break;
     default:
         break;
@@ -250,7 +261,7 @@ void next()
 
 ast* parse_constant()
 {
-    log_info("Parsing constant...");
+    log_debug("Parsing constant...");
     ast* expr = new_ast(AST_CONSTANT);
     expr->data.constant.type = CONST_INT;
     expr->data.constant.value = atoi(g_cur->value);
@@ -260,30 +271,46 @@ ast* parse_constant()
 
 ast* parse_identifier()
 {
-    log_info("Parsing identifier...");
+    log_debug("Parsing identifier...");
     ast* expr = new_ast(AST_IDENTIFIER);
-    expr->data.identifier.name = g_cur->value;
+    expr->data.identifier.name = strdup(g_cur->value);
     next();
     return expr;
 }
 
 ast* parse_binop()
 {
-    log_info("Parsing binary operation...");
+    log_debug("Parsing binary operation...");
     ast* expr = new_ast(AST_BINOP);
     expr->data.binop.lhs = parse_identifier();
 
-    if (!is_binop(g_cur->type))
+    switch (g_cur->type)
     {
-        throw("Expected binary operator (+, -, *, /). Got %s", get_token_type_string(g_cur->type));
-    };
+    case TOK_ADD:
+        expr->data.binop.op = BIN_ADD;
+        break;
+    case TOK_SUB:
+        expr->data.binop.op = BIN_SUB;
+        break;
+    case TOK_MUL:
+        expr->data.binop.op = BIN_MUL;
+        break;
+    case TOK_DIV:
+        expr->data.binop.op = BIN_DIV;
+        break;
+    default:
+        throw("Expected binary operator. Got %s", get_token_type_string(g_cur->type));
+    }
+    next();
+
+    expr->data.binop.rhs = parse_expression();
 
     return expr;
 }
 
 ast* parse_expression()
 {
-    log_info("Parsing expression...");
+    log_debug("Parsing expression...");
 
     // If the current token is a constant and the next token is a semicolon,
     // parse the constant and return.
@@ -310,7 +337,7 @@ ast* parse_expression()
 
 ast* parse_assignment()
 {
-    log_info("Parsing assignment...");
+    log_debug("Parsing assignment...");
 
     ast* expr = new_ast(AST_ASSIGN);
 
@@ -333,7 +360,7 @@ ast* parse_assignment()
 
 ast* parse_new_assignment()
 {
-    log_info("Parsing new assignment...");
+    log_debug("Parsing new assignment...");
 
     ast* expr = new_ast(AST_ASSIGN);
 
@@ -365,7 +392,7 @@ ast* parse_new_assignment()
 /* `stmt = assign | call | declvar | declfunc | declclass` */
 ast* parse_statement()
 {
-    log_info("Parsing statement...");
+    log_debug("Parsing statement...");
     // Parse new assignment if the next token is an
     // identifier and the second-next token is
     // an assignment operator (`=`).
@@ -396,7 +423,7 @@ ast* parse_statement()
 
 ast* parse_body()
 {
-    log_info("Parsing body...");
+    log_debug("Parsing body...");
 
     ast* expr = new_ast(AST_BODY);
 
@@ -419,7 +446,7 @@ ast* parse_body()
 
 ast* parse_program()
 {
-    log_info("Parsing program...");
+    log_debug("Parsing program...");
 
     ast* expr = new_ast(AST_PROGRAM);
 
@@ -439,10 +466,10 @@ ast* parse_program()
 
 ast* parse(char* buffer)
 {
-    log_info("Tokenizing input...");
+    log_debug("Tokenizing input...");
     token_t* tokens = calloc(TOKEN_COUNT, sizeof(token_t));
     size_t count = tokenize(buffer, tokens);
-    log_info("Found %d tokens.", count);
+    log_debug("Found %d tokens.", count);
 
 #ifdef DEBUG
     for (int i = 0; i < count; i++)

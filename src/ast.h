@@ -44,6 +44,25 @@ typedef enum ast_binop_t
     BIN_EQ,
 } ast_binop_t;
 
+static char* binop_to_string(ast_binop_t op)
+{
+    switch (op)
+    {
+    case BIN_ADD:
+        return "ADD";
+    case BIN_SUB:
+        return "SUB";
+    case BIN_MUL:
+        return "MUL";
+    case BIN_DIV:
+        return "DIV";
+    case BIN_EQ:
+        return "EQ";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 /* AST Node definitions
  *
  * Adding a new node definition requires 4 steps:
@@ -71,7 +90,7 @@ AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
-AST_NODE(binop, 4, AST_PROP(ast*, lhs) AST_PROP(ast_binop_t, op) AST_PROP(ast*, rhs));
+AST_NODE(binop, 4, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
 
 #undef PAD
 #undef AST_PROP

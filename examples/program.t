@@ -1,4 +1,2 @@
-let var1 = 12;
-var1 = 15;
-
-const var2 = var1 + 5;
+let var1 = 5 + 10;
+const var2 = var1 * 3;
