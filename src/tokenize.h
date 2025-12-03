@@ -9,11 +9,11 @@
 typedef enum token_type_t
 {
     TOK_EOF = 0,
-    TOK_INT,
-    TOK_STRING,
+
+    TOK_NUMBER,
 
     TOK_IDENTIFIER = 128,
-    TOK_VARDECL,
+    TOK_DECLVAR,
     TOK_DEF,
     TOK_RETURN,
     TOK_IF,
@@ -23,7 +23,7 @@ typedef enum token_type_t
 
     TOK_ASSIGN = '=',
     TOK_ADD = '+',
-    TOK_MIN = '-',
+    TOK_SUB = '-',
     TOK_MUL = '*',
     TOK_DIV = '/',
 
@@ -48,8 +48,19 @@ typedef struct token_t
 {
     enum token_type_t type;
     char* value;
-    int pos;
+    size_t start;
+    size_t end;
 } token_t;
+
+static bool is_binop(token_type_t type)
+{
+    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL || type == TOK_DIV;
+}
+
+static bool is_constant(token_type_t type)
+{
+    return type == TOK_NUMBER;
+}
 
 // Tokenizer API
 size_t tokenize(char* buffer, token_t* tokens);

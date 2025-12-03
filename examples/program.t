@@ -1,3 +1,2 @@
-let my_var = 12;
-const my_var2 = 16;
-const my_var3 = 32;
+let var1 = 5 + 10;
+const var2 = var1 * 3;
