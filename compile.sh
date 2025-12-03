@@ -6,6 +6,14 @@
 
 set -e
 
+# Accept an input ASM filename as the first argument (default: hello_world.asm)
+PROGRAM_NAME="${1}"
+if [[ ! -f "${PROGRAM_NAME}.asm" ]]; then
+    echo "Error: input file '${PROGRAM_NAME}' not found."
+    exit 1
+fi
+
+
 # Allow overrides via environment
 NASM_DIR=${NASM_DIR:-"/mnt/c/Users/thoma/AppData/Local/bin/NASM"}
 MSVC_HOST_64=${MSVC_HOST_64:-"/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64"}
@@ -47,9 +55,9 @@ else
     LEGACY_STDIO_DEF="${MSVC_64}/legacy_stdio_definitions.lib"
 fi
 
-echo "Assembling hello_world.asm with NASM..."
-"${NASM_DIR}/nasm.exe" -f win64 hello_world.asm -o hello_world.obj
-echo "NASM compiled hello_world.obj"
+echo "Assembling ${PROGRAM_NAME}.asm with NASM..."
+"${NASM_DIR}/nasm.exe" -f win64 ${PROGRAM_NAME}.asm -o ${PROGRAM_NAME}.obj
+echo "NASM compiled ${PROGRAM_NAME}.obj"
 
 echo "Linking with MSVC link.exe..."
 # Convert WSL/Posix paths to Windows paths to avoid link.exe treating them as options
@@ -65,10 +73,10 @@ if command -v wslpath >/dev/null 2>&1; then
     else
         LEGACY_STDIO_DEF_WIN=
     fi
-    OBJ_WIN=$(wslpath -w "$(pwd)/hello_world.obj")
+    OBJ_WIN=$(wslpath -w "$(pwd)/${PROGRAM_NAME}.obj")
 
     # Build a temporary Windows .cmd file containing the full linker invocation
-    OUT_EXE_WIN=$(wslpath -w "$(pwd)/hello_world.exe")
+    OUT_EXE_WIN=$(wslpath -w "$(pwd)/${PROGRAM_NAME}.exe")
     LINK_CMD_FILE=$(mktemp /tmp/linkcmdXXXX.cmd)
 
     # Try to find vcvarsall.bat in common Visual Studio locations
@@ -120,16 +128,15 @@ else
     # Fallback: try invoking link.exe directly (may misinterpret POSIX paths)
     "${MSVC_HOST_64}/link.exe" \
         /SUBSYSTEM:console \
-        /ENTRY:main \
-        /OUT:hello_world.exe \
+        /OUT:${PROGRAM_NAME}.exe \
         /LIBPATH:"${WIN_UM_64}" \
         /LIBPATH:"${WIN_UCRT_64}" \
         /LIBPATH:"${MSVC_64}" \
         "${WIN_UM_64}/kernel32.lib" \
         "${WIN_UCRT_64}/ucrt.lib" \
         ${LEGACY_STDIO_DEF} \
-        hello_world.obj
+        ${PROGRAM_NAME}.obj
 fi
 
 echo "Running generated exe..."
-./hello_world.exe
+./${PROGRAM_NAME}.exe

@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "asm.h"
 #include "log.h"
 #include "misc.h"
 #include "tokenize.h"
@@ -163,27 +164,55 @@ void ast_fmt(char* buffer, ast* node)
 
 void ast_emit(char* buffer, ast* node)
 {
+    // Create a temporary ASM buffer
+    ASM_START(1024);
+
     switch (node->type)
     {
+        // Constant values (int)
     case AST_CONSTANT:
-        sprintf(buffer, "    ldr r0, =%d\n", node->data.constant.value);
+        LDR(node->data.constant.value);
         break;
+
+        // Root level program
     case AST_PROGRAM:
-        char* program_buffer = (char*)calloc(1, 512);
-        strcat(program_buffer, "section .text\n");
-        strcat(program_buffer, ".global main\n");
-        strcat(program_buffer, "main:\n");
-        strcat(program_buffer, "    push rbp\n");
-        strcat(program_buffer, "    mov rbp, rsp\n");
-        strcat(program_buffer, "    mov eax, 0\n");
-        strcat(program_buffer, "    pop rbp\n");
-        strcat(program_buffer, "    ret\n");
-        sprintf(buffer, "%s", program_buffer);
-        free(program_buffer);
+        BITS(64);
+        EXTERN(printf);
+
+        SECTION(data);
+        DB(message, "This is a test string. :D", 10, 0);
+        DB(format, "%s", 0);
+
+        SECTION(text);
+        GLOBAL(main);
+
+        FUNC_START(main);
+
+        PUSH(rbp);
+        MOV(rbp, rsp);
+        SUB(rsp, STACK_SIZE);
+
+        MOV(rcx, format);
+        MOV(rdx, message);
+
+        CALL(printf);
+
+        ADD(rsp, STACK_SIZE);
+        POP(rbp);
+
+        MOV(rax, 0);
+
+        RET();
         break;
     default:
         break;
     }
+
+    // Push the temp ASM buffer to the output buffer
+    ASM_EMIT(buffer);
+
+    // Free memory
+    ASM_END();
 }
 
 void ast_free(ast* node)

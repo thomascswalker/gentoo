@@ -59,6 +59,20 @@ char* read_file(const char* filename)
     return buffer;
 }
 
+void write_file(const char* filename, char* buffer)
+{
+    FILE* fp = NULL;
+    fp = fopen(filename, "w");
+    if (fp == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
+
+    fputs(buffer, fp);
+    fclose(fp);
+}
+
 int main(int argc, char** argv)
 {
     // Ensure exaclty one argument (the file's name)
@@ -87,15 +101,21 @@ int main(int argc, char** argv)
     log_debug("Parsing:\n%s", buf);
     ast* root_node = parse(buf);
 
-    char* program_buffer = malloc(512);
-    ast_emit(program_buffer, root_node);
-    log_info("Assembly:\n%s", program_buffer);
-    free(program_buffer);
+    char* asm_buffer = malloc(512);
+    ast_emit(asm_buffer, root_node);
+    log_info("Assembly:\n%s", asm_buffer);
+
+    // Output to asm file
+    write_file("program.asm", asm_buffer);
+
+    free(asm_buffer);
 
     ast_free(root_node);
 
     // Free the file content buffer
     free(buf);
+
+    system("bash compile.sh program");
 
     return 0;
 }
