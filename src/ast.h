@@ -20,7 +20,7 @@ typedef enum ast_node_t
 
     // Statements
     AST_DECLVAR,
-    AST_RETURN,
+    // AST_RETURN,
     AST_ASSIGN,
 
     // Expressions
@@ -44,24 +44,7 @@ typedef enum ast_binop_t
     BIN_EQ,
 } ast_binop_t;
 
-static char* binop_to_string(ast_binop_t op)
-{
-    switch (op)
-    {
-    case BIN_ADD:
-        return "ADD";
-    case BIN_SUB:
-        return "SUB";
-    case BIN_MUL:
-        return "MUL";
-    case BIN_DIV:
-        return "DIV";
-    case BIN_EQ:
-        return "EQ";
-    default:
-        return "UNKNOWN";
-    }
-}
+char* binop_to_string(ast_binop_t op);
 
 /* AST Node definitions
  *

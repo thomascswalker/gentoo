@@ -34,6 +34,26 @@ char* get_node_type_string(ast_node_t type)
     }
 }
 
+char* binop_to_string(ast_binop_t op)
+
+{
+    switch (op)
+    {
+    case BIN_ADD:
+        return "ADD";
+    case BIN_SUB:
+        return "SUB";
+    case BIN_MUL:
+        return "MUL";
+    case BIN_DIV:
+        return "DIV";
+    case BIN_EQ:
+        return "EQ";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 ast* ast_new(ast_node_t type)
 {
     ast* node = (ast*)malloc(sizeof(ast));
@@ -153,7 +173,11 @@ void ast_emit(char* buffer, ast* node)
         strcat(program_buffer, "section .text\n");
         strcat(program_buffer, ".global main\n");
         strcat(program_buffer, "main:\n");
-        strcat(program_buffer, "    int 0x80\n");
+        strcat(program_buffer, "    push rbp\n");
+        strcat(program_buffer, "    mov rbp, rsp\n");
+        strcat(program_buffer, "    mov eax, 0\n");
+        strcat(program_buffer, "    pop rbp\n");
+        strcat(program_buffer, "    ret\n");
         sprintf(buffer, "%s", program_buffer);
         free(program_buffer);
         break;

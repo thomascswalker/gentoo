@@ -53,17 +53,10 @@ typedef struct token_t
     size_t end;
 } token_t;
 
-static bool is_binop(token_type_t type)
-{
-    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL || type == TOK_DIV;
-}
+bool is_binop(token_type_t type);
+bool is_constant(token_type_t type);
 
-static bool is_constant(token_type_t type)
-{
-    return type == TOK_NUMBER;
-}
-
-// Tokenizer API
+// Tokenization
 size_t tokenize(char* buffer, token_t* tokens);
 token_t* new_token(void);
 void alloc_token(token_t* token, size_t size);
