@@ -34,14 +34,14 @@ char* get_node_type_string(ast_node_t type)
     }
 }
 
-ast* new_ast(ast_node_t type)
+ast* ast_new(ast_node_t type)
 {
     ast* node = (ast*)malloc(sizeof(ast));
     node->type = type;
     return node;
 }
 
-void fmt_ast(char* buffer, ast* node)
+void ast_fmt(char* buffer, ast* node)
 {
     switch (node->type)
     {
@@ -62,7 +62,7 @@ void fmt_ast(char* buffer, ast* node)
             {
                 continue;
             }
-            fmt_ast(temp, node->data.program.body[i]);
+            ast_fmt(temp, node->data.program.body[i]);
             bodies = strjoin(bodies, &cap, temp, i > 0);
             free(temp);
         }
@@ -88,7 +88,7 @@ void fmt_ast(char* buffer, ast* node)
             {
                 continue;
             }
-            fmt_ast(temp, node->data.body.statements[i]);
+            ast_fmt(temp, node->data.body.statements[i]);
             stmts = strjoin(stmts, &cap, temp, i > 0);
             free(temp);
         }
@@ -107,7 +107,7 @@ void fmt_ast(char* buffer, ast* node)
         break;
     case AST_DECLVAR:
         char* ident_buffer = (char*)calloc(1, 512);
-        fmt_ast(ident_buffer, node->data.declvar.identifier);
+        ast_fmt(ident_buffer, node->data.declvar.identifier);
         sprintf(buffer, "{\"type\": \"%s\", \"ident\": %s, \"is_const\": %s}", get_node_type_string(node->type),
                 ident_buffer, node->data.declvar.is_const ? "true" : "false");
         free(ident_buffer);
@@ -120,8 +120,8 @@ void fmt_ast(char* buffer, ast* node)
         {
             return;
         }
-        fmt_ast(lhs_buffer, node->data.assign.lhs);
-        fmt_ast(rhs_buffer, node->data.assign.rhs);
+        ast_fmt(lhs_buffer, node->data.assign.lhs);
+        ast_fmt(rhs_buffer, node->data.assign.rhs);
         sprintf(buffer, "{\"type\": \"%s\", \"lhs\": %s, \"rhs\": %s}", get_node_type_string(node->type), lhs_buffer,
                 rhs_buffer);
         free(lhs_buffer);
@@ -131,8 +131,8 @@ void fmt_ast(char* buffer, ast* node)
     case AST_BINOP:
         char* lhs_buffer = (char*)malloc(512);
         char* rhs_buffer = (char*)malloc(512);
-        fmt_ast(lhs_buffer, node->data.binop.lhs);
-        fmt_ast(rhs_buffer, node->data.binop.rhs);
+        ast_fmt(lhs_buffer, node->data.binop.lhs);
+        ast_fmt(rhs_buffer, node->data.binop.rhs);
         sprintf(buffer, "{\"type\": \"%s\", \"op\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
                 get_node_type_string(node->type), binop_to_string(node->data.binop.op), lhs_buffer, rhs_buffer);
         free(lhs_buffer);
@@ -141,7 +141,28 @@ void fmt_ast(char* buffer, ast* node)
     }
 }
 
-void free_ast(ast* node)
+void ast_emit(char* buffer, ast* node)
+{
+    switch (node->type)
+    {
+    case AST_CONSTANT:
+        sprintf(buffer, "    ldr r0, =%d\n", node->data.constant.value);
+        break;
+    case AST_PROGRAM:
+        char* program_buffer = (char*)calloc(1, 512);
+        strcat(program_buffer, "section .text\n");
+        strcat(program_buffer, ".global main\n");
+        strcat(program_buffer, "main:\n");
+        strcat(program_buffer, "    int 0x80\n");
+        sprintf(buffer, "%s", program_buffer);
+        free(program_buffer);
+        break;
+    default:
+        break;
+    }
+}
+
+void ast_free(ast* node)
 {
     if (!node)
     {
@@ -158,7 +179,7 @@ void free_ast(ast* node)
             // Free each body in the array
             for (int i = 0; i < node->data.program.count; i++)
             {
-                free_ast(node->data.program.body[i]);
+                ast_free(node->data.program.body[i]);
             }
         }
         // Free the body array itself
@@ -171,7 +192,7 @@ void free_ast(ast* node)
             // Free each statement in the array
             for (int i = 0; i < node->data.body.count; i++)
             {
-                free_ast(node->data.body.statements[i]);
+                ast_free(node->data.body.statements[i]);
             }
         }
         // Free the statement array itself
@@ -179,18 +200,18 @@ void free_ast(ast* node)
         node->data.body.statements = NULL;
         break;
     case AST_DECLVAR:
-        free_ast(node->data.declvar.identifier);
+        ast_free(node->data.declvar.identifier);
         break;
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
         break;
     case AST_ASSIGN:
-        free_ast(node->data.assign.lhs);
-        free_ast(node->data.assign.rhs);
+        ast_free(node->data.assign.lhs);
+        ast_free(node->data.assign.rhs);
         break;
     case AST_BINOP:
-        free_ast(node->data.binop.lhs);
-        free_ast(node->data.binop.rhs);
+        ast_free(node->data.binop.lhs);
+        ast_free(node->data.binop.rhs);
         break;
     default:
         break;
@@ -262,7 +283,7 @@ void next()
 ast* parse_constant()
 {
     log_debug("Parsing constant...");
-    ast* expr = new_ast(AST_CONSTANT);
+    ast* expr = ast_new(AST_CONSTANT);
     expr->data.constant.type = CONST_INT;
     expr->data.constant.value = atoi(g_cur->value);
     next();
@@ -272,7 +293,7 @@ ast* parse_constant()
 ast* parse_identifier()
 {
     log_debug("Parsing identifier...");
-    ast* expr = new_ast(AST_IDENTIFIER);
+    ast* expr = ast_new(AST_IDENTIFIER);
     expr->data.identifier.name = strdup(g_cur->value);
     next();
     return expr;
@@ -281,7 +302,7 @@ ast* parse_identifier()
 ast* parse_binop()
 {
     log_debug("Parsing binary operation...");
-    ast* expr = new_ast(AST_BINOP);
+    ast* expr = ast_new(AST_BINOP);
     expr->data.binop.lhs = parse_identifier();
 
     switch (g_cur->type)
@@ -339,11 +360,11 @@ ast* parse_assignment()
 {
     log_debug("Parsing assignment...");
 
-    ast* expr = new_ast(AST_ASSIGN);
+    ast* expr = ast_new(AST_ASSIGN);
 
     // Require a valid identifier
     require(TOK_IDENTIFIER);
-    ast* ident = new_ast(AST_IDENTIFIER);
+    ast* ident = ast_new(AST_IDENTIFIER);
     ident->data.identifier.name = strdup(g_cur->value);
     expr->data.assign.lhs = ident;
     next();
@@ -362,18 +383,18 @@ ast* parse_new_assignment()
 {
     log_debug("Parsing new assignment...");
 
-    ast* expr = new_ast(AST_ASSIGN);
+    ast* expr = ast_new(AST_ASSIGN);
 
     // Assume we're assigning to a new variable.
     require(TOK_DECLVAR);
-    ast* declvar = new_ast(AST_DECLVAR);
+    ast* declvar = ast_new(AST_DECLVAR);
     bool is_const = strcmp(g_cur->value, "const") == 0;
     declvar->data.declvar.is_const = is_const;
     next();
 
     // Require a valid identifier
     require(TOK_IDENTIFIER);
-    ast* ident = new_ast(AST_IDENTIFIER);
+    ast* ident = ast_new(AST_IDENTIFIER);
     ident->data.identifier.name = strdup(g_cur->value);
     declvar->data.declvar.identifier = ident;
     expr->data.assign.lhs = declvar;
@@ -425,7 +446,7 @@ ast* parse_body()
 {
     log_debug("Parsing body...");
 
-    ast* expr = new_ast(AST_BODY);
+    ast* expr = ast_new(AST_BODY);
 
     struct ast_body* body = &expr->data.body;
 
@@ -448,7 +469,7 @@ ast* parse_program()
 {
     log_debug("Parsing program...");
 
-    ast* expr = new_ast(AST_PROGRAM);
+    ast* expr = ast_new(AST_PROGRAM);
 
     // Assume a maximum of 32 bodies.
     struct ast_program* program = &expr->data.program;
@@ -482,7 +503,7 @@ ast* parse(char* buffer)
 
     ast* program = parse_program();
     char program_buffer[1024];
-    fmt_ast(program_buffer, program);
+    ast_fmt(program_buffer, program);
     log_info("Program: %s\n", program_buffer);
 
     for (int i = 0; i < count; i++)

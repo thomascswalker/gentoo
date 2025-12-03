@@ -87,7 +87,12 @@ int main(int argc, char** argv)
     log_debug("Parsing:\n%s", buf);
     ast* root_node = parse(buf);
 
-    free_ast(root_node);
+    char* program_buffer = malloc(512);
+    ast_emit(program_buffer, root_node);
+    log_info("Assembly:\n%s", program_buffer);
+    free(program_buffer);
+
+    ast_free(root_node);
 
     // Free the file content buffer
     free(buf);

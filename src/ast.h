@@ -68,8 +68,8 @@ static char* binop_to_string(ast_binop_t op)
  * Adding a new node definition requires 4 steps:
  *
  * 1. Declare the new node using the macros below.
- * 2. Add the node type to `fmt_ast`.
- * 3. Add the node type to `free_ast`.
+ * 2. Add the node type to `ast_fmt`.
+ * 3. Add the node type to `ast_free`.
  * 4. Add the node type to `get_node_type_string`.
  */
 
@@ -122,9 +122,10 @@ struct ast
 
 /* AST functions */
 
-ast* new_ast(ast_node_t type);
-void free_ast(ast* node);
-void fmt_ast(char* buffer, ast* node);
+ast* ast_new(ast_node_t type);
+void ast_free(ast* node);
+void ast_fmt(char* buffer, ast* node);
+void ast_emit(char* buffer, ast* node);
 
 /* Parsing functions for each AST Node type */
 

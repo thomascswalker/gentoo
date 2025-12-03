@@ -2,6 +2,7 @@
     "files.associations": {
         "*.s": "asm-intel-x86-generic",
         "*.h": "cpp",
+        "*.t": "plaintext",
         "atomic": "c",
         "cstring": "c",
         "memory": "c",
@@ -11,6 +12,7 @@
         "xtr1common": "c",
         "compare": "c",
         "tuple": "c",
-        "utility": "c"
+        "utility": "c",
+        "cstdlib": "cpp"
     }
 }
