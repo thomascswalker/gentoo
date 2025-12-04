@@ -20,7 +20,6 @@ typedef enum ast_node_t
 
     // Statements
     AST_DECLVAR,
-    // AST_RETURN,
     AST_ASSIGN,
 
     // Expressions
@@ -67,8 +66,6 @@ char* binop_to_string(ast_binop_t op);
 
 AST_NODE(program, 8, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, 8, AST_PROP(ast**, statements) AST_PROP(int, count));
-AST_NODE(stmt, 12, AST_PROP(ast*, stmt));
-AST_NODE(expr, 12, AST_PROP(ast*, expr));
 AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
@@ -91,8 +88,6 @@ struct ast
     {
         struct ast_program program;
         struct ast_body body;
-        struct ast_expr expr;
-        struct ast_stmt stmt;
         struct ast_declvar declvar;
         struct ast_identifier identifier;
         struct ast_constant constant;
