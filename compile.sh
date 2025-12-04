@@ -6,8 +6,10 @@
 
 set -e
 
-# Accept an input ASM filename as the first argument (default: hello_world.asm)
-PROGRAM_NAME="${1}"
+BUILD_DIR="./build"
+
+# Accept an input ASM filename as the first argument
+PROGRAM_NAME="${BUILD_DIR}/${1}"
 if [[ ! -f "${PROGRAM_NAME}.asm" ]]; then
     echo "Error: input file '${PROGRAM_NAME}' not found."
     exit 1

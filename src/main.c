@@ -106,7 +106,7 @@ int main(int argc, char** argv)
     log_info("Assembly:\n%s", asm_buffer);
 
     // Output to asm file
-    write_file("program.asm", asm_buffer);
+    write_file("build/program.asm", asm_buffer);
 
     free(asm_buffer);
 
