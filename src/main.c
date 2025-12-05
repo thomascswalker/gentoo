@@ -102,15 +102,16 @@ int main(int argc, char** argv)
     log_debug("Parsing:\n%s", buf);
     ast* root_node = parse(buf);
 
-    char* asm_buffer = malloc(512);
-    ast_emit(asm_buffer, root_node);
-    log_info("Assembly:\n%s", asm_buffer);
+    buffer_t* b = ast_emit(root_node);
+    log_info("Assembly:\n%s", b->data);
 
     // Output to asm file
-    write_file("build/program.asm", asm_buffer);
+    write_file("build/program.asm", b->data);
 
-    free(asm_buffer);
+    // Free the output AST buffer
+    free(b);
 
+    // Free the AST node hierarchy
     ast_free(root_node);
 
     // Free the file content buffer

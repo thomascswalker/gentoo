@@ -1,5 +1,6 @@
 #include "ast.h"
 #include "asm.h"
+#include "buffer.h"
 #include "log.h"
 #include "misc.h"
 #include "tokenize.h"
@@ -162,10 +163,9 @@ void ast_fmt(char* buffer, ast* node)
     }
 }
 
-void ast_emit(char* buffer, ast* node)
+buffer_t* ast_emit(ast* node)
 {
-    // Create a temporary ASM buffer
-    ASM_START(1024);
+    buffer_t* b = new_buffer();
 
     switch (node->type)
     {
@@ -207,12 +207,6 @@ void ast_emit(char* buffer, ast* node)
     default:
         break;
     }
-
-    // Push the temp ASM buffer to the output buffer
-    ASM_EMIT(buffer);
-
-    // Free memory
-    ASM_END();
 }
 
 void ast_free(ast* node)

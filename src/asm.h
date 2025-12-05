@@ -5,13 +5,7 @@
 #define STRINGIFY(x) #x
 #define EXPAND(...) __VA_ARGS__
 
-#define ASM_START(size) char* asm_buffer = (char*)calloc(1, size)
-
-#define ASM_END() free(asm_buffer)
-
-#define ASM_EMIT(buffer) sprintf(buffer, "%s", asm_buffer)
-
-#define _ASM(text) strcat(asm_buffer, text "\n");
+#define _ASM(text) buffer_puts(b, text "\n");
 
 #define BITS(size) _ASM("bits " STRINGIFY(size) "\n")
 #define EXTERN(symbol) _ASM("extern " STRINGIFY(symbol))
@@ -28,4 +22,4 @@
 
 #define STRV(...) #__VA_ARGS__
 #define DB(symbol, ...) _ASM("\t" #symbol " db " STRV(__VA_ARGS__))
-#define LDR(value) sprintf(asm_buffer, "\tldr r0, =%d\n", value)
+#define LDR(value) buffer_printf(b, "\tldr r0, =%d\n", value)
