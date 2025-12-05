@@ -97,23 +97,23 @@ int main(int argc, char** argv)
     // 2. Get the file size.
     // 3. Read the file data into a buffer.
     // 4. Close the file.
+    log_info("Compiling %s...", file_name);
     char* buf = read_file(file_name);
 
     // Parse the file content into an AST
-    log_debug("Parsing:\n%s", buf);
+    log_info("Parsing file...");
+    log_debug("%s", buf);
     ast* root_node = parse(buf);
     free(buf);
 
     // Generate assembly code
+    log_info("Generating assembly...");
     char* code = ast_codegen(root_node);
     ast_free(root_node);
-    log_info("Assembly:\n%s", code);
 
     // Output to asm file
     write_file("build/program.asm", code);
     free(code);
-
-    system("bash compile.sh program");
 
     return 0;
 }

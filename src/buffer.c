@@ -37,7 +37,16 @@ void buffer_realloc(buffer_t* buf)
 {
     size_t new_capacity = buf->capacity * 2;
     char* new_data = (char*)malloc(new_capacity);
-    memcpy(new_data, buf->data, buf->capacity);
+    if (!new_data)
+    {
+        return;
+    }
+    size_t to_copy = buf->size;
+    if (to_copy > 0)
+    {
+        memcpy(new_data, buf->data, to_copy);
+    }
+    new_data[to_copy] = '\0';
     free(buf->data);
     buf->data = new_data;
     buf->capacity = new_capacity;
@@ -45,8 +54,26 @@ void buffer_realloc(buffer_t* buf)
 
 void buffer_recalloc(buffer_t* buf, size_t new_capacity)
 {
+    if (new_capacity == 0)
+    {
+        return;
+    }
     char* new_data = (char*)malloc(new_capacity);
-    memcpy(new_data, buf->data, buf->capacity);
+    if (!new_data)
+    {
+        return;
+    }
+    size_t to_copy = buf->size;
+    if (to_copy >= new_capacity)
+    {
+        to_copy = new_capacity - 1;
+    }
+    if (to_copy > 0)
+    {
+        memcpy(new_data, buf->data, to_copy);
+    }
+    new_data[to_copy] = '\0';
+    buf->size = to_copy;
     free(buf->data);
     buf->data = new_data;
     buf->capacity = new_capacity;
@@ -59,12 +86,18 @@ void buffer_putc(buffer_t* buf, char c)
         return;
     }
 
-    while (buf->size == buf->capacity)
+    // Reallocate memory by doubling it until we have enough
+    // memory (size) plus 1 (to account for the NULL terminator)
+    while (buf->size + 1 >= buf->capacity)
     {
         size_t new_capacity = buf->capacity * 2;
         buffer_recalloc(buf, new_capacity);
     }
+
+    // Actually set the character at the current buffer size
     buf->data[buf->size] = c;
+
+    // Append the NULL terminator to the end
     buf->size++;
     buf->data[buf->size] = 0;
 }
@@ -77,15 +110,13 @@ void buffer_puts(buffer_t* buf, char* str)
     }
 
     size_t length = strlen(str);
-    log_info("Length: %d", length);
+    // Need room for the string plus terminating null
     size_t remaining = buf->capacity - buf->size;
-    log_info("Remaining: %d", remaining);
-
-    if (remaining < length)
+    if (remaining <= length)
     {
-        size_t new_size = buf->size + length;
+        size_t needed = buf->size + length + 1;
         size_t new_capacity = buf->capacity * 2;
-        while (new_capacity < new_size)
+        while (new_capacity < needed)
         {
             new_capacity *= 2;
         }
@@ -98,7 +129,7 @@ void buffer_puts(buffer_t* buf, char* str)
         buf->size++;
     }
 
-    buf->data[buf->size] = 0;
+    buf->data[buf->size] = '\0';
 }
 
 void buffer_printf(buffer_t* buf, char* format, ...)

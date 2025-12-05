@@ -222,9 +222,9 @@ char* ast_codegen(ast* node)
     g_data = buffer_new();
     buffer_puts(g_data, "section .data\n");
     g_bss = buffer_new();
-    buffer_puts(g_data, "section .bss\n");
+    buffer_puts(g_bss, "section .bss\n");
     g_text = buffer_new();
-    buffer_puts(g_data, "section .text\n");
+    buffer_puts(g_text, "section .text\n");
 
     // Emit from the root (program) node into each section
     ast_emit(node);
@@ -590,7 +590,7 @@ ast* parse(char* buffer)
     ast* program = parse_program();
     char program_buffer[1024];
     ast_fmt(program_buffer, program);
-    log_info("Program: %s\n", program_buffer);
+    log_debug("Program: %s", program_buffer);
 
     for (int i = 0; i < count; i++)
     {
