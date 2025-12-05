@@ -1,6 +1,7 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 

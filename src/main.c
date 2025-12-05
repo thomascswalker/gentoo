@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 
 #include "ast.h"
+#include "buffer.h"
 #include "log.h"
 
 char* read_file(const char* filename)
@@ -116,6 +117,12 @@ int main(int argc, char** argv)
     free(buf);
 
     system("bash compile.sh program");
+
+    buffer_t* b = buffer_new();
+    buffer_printf(b, "this %s is a test string: %d", "WORD", 843);
+    // char* test = format("this %s is a test string: %d", "WORD", 843);
+    log_info(b->data);
+    buffer_free(b);
 
     return 0;
 }
