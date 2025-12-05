@@ -2,6 +2,7 @@
     "files.associations": {
         "*.s": "asm-intel-x86-generic",
         "*.h": "cpp",
+        "*.t": "plaintext",
         "atomic": "c",
         "cstring": "c",
         "memory": "c",
@@ -11,6 +12,27 @@
         "xtr1common": "c",
         "compare": "c",
         "tuple": "c",
-        "utility": "c"
+        "utility": "c",
+        "cstdlib": "cpp",
+        "random": "c",
+        "array": "c",
+        "deque": "c",
+        "iterator": "c",
+        "list": "c",
+        "stack": "c",
+        "vector": "c",
+        "xhash": "c",
+        "xtree": "c",
+        "format": "c",
+        "initializer_list": "c",
+        "xstring": "c",
+        "xlocmon": "c",
+        "system_error": "c",
+        "chrono": "c",
+        "xlocale": "c",
+        "thread": "c",
+        "algorithm": "c",
+        "functional": "c",
+        "optional": "c"
     }
 }

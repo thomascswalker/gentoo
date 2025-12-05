@@ -20,7 +20,6 @@ typedef enum ast_node_t
 
     // Statements
     AST_DECLVAR,
-    AST_RETURN,
     AST_ASSIGN,
 
     // Expressions
@@ -44,32 +43,23 @@ typedef enum ast_binop_t
     BIN_EQ,
 } ast_binop_t;
 
-static char* binop_to_string(ast_binop_t op)
+char* binop_to_string(ast_binop_t op);
+
+/* Symbol structure */
+typedef struct symbol_t
 {
-    switch (op)
-    {
-    case BIN_ADD:
-        return "ADD";
-    case BIN_SUB:
-        return "SUB";
-    case BIN_MUL:
-        return "MUL";
-    case BIN_DIV:
-        return "DIV";
-    case BIN_EQ:
-        return "EQ";
-    default:
-        return "UNKNOWN";
-    }
-}
+    char name[32];
+    size_t value;
+    size_t size;
+} symbol_t;
 
 /* AST Node definitions
  *
  * Adding a new node definition requires 4 steps:
  *
  * 1. Declare the new node using the macros below.
- * 2. Add the node type to `fmt_ast`.
- * 3. Add the node type to `free_ast`.
+ * 2. Add the node type to `ast_fmt`.
+ * 3. Add the node type to `ast_free`.
  * 4. Add the node type to `get_node_type_string`.
  */
 
@@ -84,8 +74,6 @@ static char* binop_to_string(ast_binop_t op)
 
 AST_NODE(program, 8, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, 8, AST_PROP(ast**, statements) AST_PROP(int, count));
-AST_NODE(stmt, 12, AST_PROP(ast*, stmt));
-AST_NODE(expr, 12, AST_PROP(ast*, expr));
 AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
@@ -108,8 +96,6 @@ struct ast
     {
         struct ast_program program;
         struct ast_body body;
-        struct ast_expr expr;
-        struct ast_stmt stmt;
         struct ast_declvar declvar;
         struct ast_identifier identifier;
         struct ast_constant constant;
@@ -122,9 +108,11 @@ struct ast
 
 /* AST functions */
 
-ast* new_ast(ast_node_t type);
-void free_ast(ast* node);
-void fmt_ast(char* buffer, ast* node);
+ast* ast_new(ast_node_t type);
+void ast_free(ast* node);
+void ast_fmt(char* buffer, ast* node);
+void ast_emit(ast* node);
+char* ast_codegen(ast* node);
 
 /* Parsing functions for each AST Node type */
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+EXT="g2"
+
 # Arguments:
 # -d | --debug: Enables GCC debug mode and defines the '_DEBUG' macro.
 CFLAGS=()
@@ -27,7 +29,7 @@ gcc ${CFLAGS[@]} ./src/*.c -o "${COMPILER_BIN}"
 # Determine input file (positional argument). If none given, use the example.
 INPUT_FILE="${1:-}"
 if [ -z "${INPUT_FILE}" ]; then
-    INPUT_FILE="./examples/program.t"
+    INPUT_FILE="./examples/program.${EXT}"
 else
     # If the provided path exists use it, otherwise try under ./examples
     if [ -f "${INPUT_FILE}" ]; then
@@ -42,3 +44,5 @@ fi
 
 # Run the compiler with the chosen input file
 "${COMPILER_BIN}" "${INPUT_FILE}"
+
+./compile.sh program

@@ -1,1 +1,1 @@
-valgrind  --leak-check=full --show-leak-kinds=all -s ./build/compiler.exe ./examples/program.t
+valgrind  --leak-check=full --show-leak-kinds=all -s ./build/compiler.exe ./examples/program.g2

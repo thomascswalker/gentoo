@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 
 #include "ast.h"
+#include "buffer.h"
 #include "log.h"
 
 char* read_file(const char* filename)
@@ -59,6 +60,20 @@ char* read_file(const char* filename)
     return buffer;
 }
 
+void write_file(const char* filename, char* buffer)
+{
+    FILE* fp = NULL;
+    fp = fopen(filename, "w");
+    if (fp == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
+
+    fputs(buffer, fp);
+    fclose(fp);
+}
+
 int main(int argc, char** argv)
 {
     // Ensure exaclty one argument (the file's name)
@@ -82,15 +97,23 @@ int main(int argc, char** argv)
     // 2. Get the file size.
     // 3. Read the file data into a buffer.
     // 4. Close the file.
+    log_info("Compiling %s...", file_name);
     char* buf = read_file(file_name);
 
-    log_debug("Parsing:\n%s", buf);
+    // Parse the file content into an AST
+    log_info("Parsing file...");
+    log_debug("%s", buf);
     ast* root_node = parse(buf);
-
-    free_ast(root_node);
-
-    // Free the file content buffer
     free(buf);
+
+    // Generate assembly code
+    log_info("Generating assembly...");
+    char* code = ast_codegen(root_node);
+    ast_free(root_node);
+
+    // Output to asm file
+    write_file("build/program.asm", code);
+    free(code);
 
     return 0;
 }

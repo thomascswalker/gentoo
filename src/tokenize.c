@@ -313,3 +313,13 @@ size_t tokenize(char* buffer, token_t* tokens)
     // Return the token count
     return token_count;
 }
+
+bool is_binop(token_type_t type)
+{
+    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL || type == TOK_DIV;
+}
+
+bool is_constant(token_type_t type)
+{
+    return type == TOK_NUMBER;
+}
