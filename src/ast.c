@@ -12,6 +12,10 @@
 
 // Track the current token
 static token_t* g_cur = NULL;
+static buffer_t* g_global;
+static buffer_t* g_data;
+static buffer_t* g_bss;
+static buffer_t* g_text;
 
 char* get_node_type_string(ast_node_t type)
 {
@@ -163,10 +167,8 @@ void ast_fmt(char* buffer, ast* node)
     }
 }
 
-buffer_t* ast_emit(ast* node)
+void ast_emit(ast* node)
 {
-    buffer_t* b = new_buffer();
-
     switch (node->type)
     {
         // Constant values (int)
@@ -176,16 +178,12 @@ buffer_t* ast_emit(ast* node)
 
         // Root level program
     case AST_PROGRAM:
-        BITS(64);
         EXTERN(printf);
 
-        SECTION(data);
         DB(message, "This is a test string. :D", 10, 0);
         DB(format, "%s", 0);
 
-        SECTION(text);
         GLOBAL(main);
-
         FUNC_START(main);
 
         PUSH(rbp);
@@ -207,6 +205,40 @@ buffer_t* ast_emit(ast* node)
     default:
         break;
     }
+}
+
+char* ast_codegen(ast* node)
+{
+    // Initialize each section (global, data, bss, text)
+    g_global = buffer_new();
+    buffer_puts(g_global, "bits 64\n");
+    g_data = buffer_new();
+    buffer_puts(g_data, "section .data\n");
+    g_bss = buffer_new();
+    buffer_puts(g_data, "section .bss\n");
+    g_text = buffer_new();
+    buffer_puts(g_data, "section .text\n");
+
+    // Emit from the root (program) node into each section
+    ast_emit(node);
+
+    // Copy the buffers into a primary buffer
+    buffer_t* code_buffer = buffer_new();
+    buffer_puts(code_buffer, g_global->data);
+    buffer_puts(code_buffer, g_data->data);
+    buffer_puts(code_buffer, g_bss->data);
+    buffer_puts(code_buffer, g_text->data);
+
+    // Free each sections buffer
+    buffer_free(g_global);
+    buffer_free(g_data);
+    buffer_free(g_bss);
+    buffer_free(g_text);
+
+    // Copy the primary buffer into a char array
+    char* code = strdup(code_buffer->data);
+    buffer_free(code_buffer);
+    return code;
 }
 
 void ast_free(ast* node)

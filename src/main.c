@@ -99,23 +99,19 @@ int main(int argc, char** argv)
     // 4. Close the file.
     char* buf = read_file(file_name);
 
+    // Parse the file content into an AST
     log_debug("Parsing:\n%s", buf);
     ast* root_node = parse(buf);
+    free(buf);
 
-    buffer_t* b = ast_emit(root_node);
-    log_info("Assembly:\n%s", b->data);
+    // Generate assembly code
+    char* code = ast_codegen(root_node);
+    ast_free(root_node);
+    log_info("Assembly:\n%s", code);
 
     // Output to asm file
-    write_file("build/program.asm", b->data);
-
-    // Free the output AST buffer
-    free(b);
-
-    // Free the AST node hierarchy
-    ast_free(root_node);
-
-    // Free the file content buffer
-    free(buf);
+    write_file("build/program.asm", code);
+    free(code);
 
     system("bash compile.sh program");
 

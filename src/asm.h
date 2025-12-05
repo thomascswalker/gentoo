@@ -1,25 +1,26 @@
 #include <stdio.h>
 
 #define STACK_SIZE 32
+#define STRV(...) #__VA_ARGS__
+
+#define BUF_GLOBAL(...) buffer_printf(g_global, __VA_ARGS__);
+#define BUF_DATA(...) buffer_printf(g_data, __VA_ARGS__);
+#define BUF_BSS(...) buffer_printf(g_bss, __VA_ARGS__);
+#define BUF_TEXT(...) buffer_printf(g_text, __VA_ARGS__);
 
 #define STRINGIFY(x) #x
 #define EXPAND(...) __VA_ARGS__
 
-#define _ASM(text) buffer_puts(b, text "\n");
+#define EXTERN(symbol) BUF_GLOBAL("extern %s\n", STRINGIFY(symbol))
+#define GLOBAL(symbol) BUF_GLOBAL("\tglobal %s\n", STRINGIFY(symbol))
+#define FUNC_START(symbol) BUF_TEXT("%s:\n", STRINGIFY(symbol))
+#define PUSH(reg) BUF_TEXT("\tpush %s\n", STRINGIFY(reg))
+#define POP(reg) BUF_TEXT("\tpop %s\n", STRINGIFY(reg))
+#define MOV(a, b) BUF_TEXT("\tmov %s, %s\n", STRINGIFY(a), STRINGIFY(b))
+#define ADD(reg, value) BUF_TEXT("\tadd %s, %s\n", STRINGIFY(reg), STRINGIFY(value))
+#define SUB(reg, value) BUF_TEXT("\tsub %s, %s\n", STRINGIFY(reg), STRINGIFY(value))
+#define CALL(symbol) BUF_TEXT("\tcall %s\n", STRINGIFY(symbol))
+#define RET() BUF_TEXT("\tret\n")
 
-#define BITS(size) _ASM("bits " STRINGIFY(size) "\n")
-#define EXTERN(symbol) _ASM("extern " STRINGIFY(symbol))
-#define SECTION(name) _ASM("\nsection ." STRINGIFY(name))
-#define GLOBAL(symbol) _ASM("\tglobal " STRINGIFY(symbol))
-#define FUNC_START(symbol) _ASM("\n" STRINGIFY(symbol) ":")
-#define PUSH(reg) _ASM("\tpush " STRINGIFY(reg))
-#define POP(reg) _ASM("\tpop " STRINGIFY(reg))
-#define MOV(a, b) _ASM("\tmov " STRINGIFY(a) ", " STRINGIFY(b))
-#define ADD(reg, value) _ASM("\tadd " STRINGIFY(reg) ", " STRINGIFY(value))
-#define SUB(reg, value) _ASM("\tsub " STRINGIFY(reg) ", " STRINGIFY(value))
-#define CALL(symbol) _ASM("\tcall " STRINGIFY(symbol))
-#define RET() _ASM("\tret")
-
-#define STRV(...) #__VA_ARGS__
-#define DB(symbol, ...) _ASM("\t" #symbol " db " STRV(__VA_ARGS__))
-#define LDR(value) buffer_printf(b, "\tldr r0, =%d\n", value)
+#define DB(symbol, ...) BUF_DATA("\t%s db %s\n", STRINGIFY(symbol), STRV(__VA_ARGS__))
+#define LDR(value) BUF_TEXT("\tldr r0, =%d\n", value)

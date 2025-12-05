@@ -103,7 +103,8 @@ struct ast
 ast* ast_new(ast_node_t type);
 void ast_free(ast* node);
 void ast_fmt(char* buffer, ast* node);
-buffer_t* ast_emit(ast* node);
+void ast_emit(ast* node);
+char* ast_codegen(ast* node);
 
 /* Parsing functions for each AST Node type */
 
