@@ -17,6 +17,8 @@ static buffer_t* g_data;
 static buffer_t* g_bss;
 static buffer_t* g_text;
 
+static symbol_t g_symbols[1024];
+
 char* get_node_type_string(ast_node_t type)
 {
     switch (type)
@@ -176,31 +178,36 @@ void ast_emit(ast* node)
         LDR(node->data.constant.value);
         break;
 
+    case AST_ASSIGN:
+        // New assignment
+        if (node->type == AST_DECLVAR)
+        {
+        }
+        // Exisiting assignment
+        else if (node->type == AST_IDENTIFIER)
+        {
+        }
+        break;
+
         // Root level program
     case AST_PROGRAM:
-        EXTERN(printf);
+        DB(hello, "OUTPUT PROGRAM", 10);
+        EQU(helloLen, hello);
 
-        DB(message, "This is a test string. :D", 10, 0);
-        DB(format, "%s", 0);
+        GLOBAL(_start);
+        FUNC_START(_start);
 
-        GLOBAL(main);
-        FUNC_START(main);
+        MOV(eax, 4);
+        MOV(ebx, 1);
+        MOV(ecx, hello);
+        MOV(edx, helloLen);
+        INT(80h);
 
-        PUSH(rbp);
-        MOV(rbp, rsp);
-        SUB(rsp, STACK_SIZE);
+        // 0 exit code
+        MOV(eax, 1); // Exit syscall
+        MOV(ebx, 0); // Error code 0
 
-        MOV(rcx, format);
-        MOV(rdx, message);
-
-        CALL(printf);
-
-        ADD(rsp, STACK_SIZE);
-        POP(rbp);
-
-        MOV(rax, 0);
-
-        RET();
+        INT(80h);
         break;
     default:
         break;

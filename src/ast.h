@@ -45,6 +45,14 @@ typedef enum ast_binop_t
 
 char* binop_to_string(ast_binop_t op);
 
+/* Symbol structure */
+typedef struct symbol_t
+{
+    char name[32];
+    size_t value;
+    size_t size;
+} symbol_t;
+
 /* AST Node definitions
  *
  * Adding a new node definition requires 4 steps:

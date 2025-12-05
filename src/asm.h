@@ -11,8 +11,8 @@
 #define STRINGIFY(x) #x
 #define EXPAND(...) __VA_ARGS__
 
-#define EXTERN(symbol) BUF_GLOBAL("extern %s\n", STRINGIFY(symbol))
-#define GLOBAL(symbol) BUF_GLOBAL("\tglobal %s\n", STRINGIFY(symbol))
+#define EXTERN(symbol) BUF_TEXT("extern %s\n", STRINGIFY(symbol))
+#define GLOBAL(symbol) BUF_TEXT("\tglobal %s\n", STRINGIFY(symbol))
 #define FUNC_START(symbol) BUF_TEXT("%s:\n", STRINGIFY(symbol))
 #define PUSH(reg) BUF_TEXT("\tpush %s\n", STRINGIFY(reg))
 #define POP(reg) BUF_TEXT("\tpop %s\n", STRINGIFY(reg))
@@ -21,6 +21,8 @@
 #define SUB(reg, value) BUF_TEXT("\tsub %s, %s\n", STRINGIFY(reg), STRINGIFY(value))
 #define CALL(symbol) BUF_TEXT("\tcall %s\n", STRINGIFY(symbol))
 #define RET() BUF_TEXT("\tret\n")
+#define INT(syscall) BUF_TEXT("\tint %s\n", STRINGIFY(syscall))
 
-#define DB(symbol, ...) BUF_DATA("\t%s db %s\n", STRINGIFY(symbol), STRV(__VA_ARGS__))
+#define DB(symbol, ...) BUF_DATA("\t%s: db %s\n", STRINGIFY(symbol), STRV(__VA_ARGS__))
+#define EQU(a, b) BUF_DATA("\t%s: equ $-%s\n", STRINGIFY(a), STRINGIFY(b))
 #define LDR(value) BUF_TEXT("\tldr r0, =%d\n", value)
