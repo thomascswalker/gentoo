@@ -18,6 +18,7 @@ typedef struct buffer_t
 buffer_t* buffer_new();
 void buffer_free(buffer_t* buf);
 void buffer_realloc(buffer_t* buf);
+void buffer_recalloc(buffer_t* buf, size_t new_capacity);
 void buffer_putc(buffer_t* buf, char c);
 void buffer_puts(buffer_t* buf, char* str);
 void buffer_printf(buffer_t* buf, char* format, ...);
