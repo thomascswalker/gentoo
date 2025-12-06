@@ -111,8 +111,10 @@ int main(int argc, char** argv)
     char* code = ast_codegen(root_node);
     ast_free(root_node);
 
+    log_debug("%s", code);
+
     // Output to asm file
-    write_file("build/program.asm", code);
+    write_file("build/program.s", code);
     free(code);
 
     return 0;

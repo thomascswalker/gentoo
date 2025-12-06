@@ -19,11 +19,13 @@ done
 # If the build directory does not exist, make it.
 BUILD_DIRECTORY="./build"
 if [ ! -d "${BUILD_DIRECTORY}" ]; then
+    echo "Building build dir"
   mkdir "${BUILD_DIRECTORY}"
 fi
 
 # Compile with GCC
 COMPILER_BIN="./build/compiler.exe"
+echo "Compiling with gcc..."
 gcc ${CFLAGS[@]} ./src/*.c -o "${COMPILER_BIN}"
 
 # Determine input file (positional argument). If none given, use the example.
@@ -43,6 +45,14 @@ else
 fi
 
 # Run the compiler with the chosen input file
+echo "Running Gentoo compiler..."
 "${COMPILER_BIN}" "${INPUT_FILE}"
 
-./compile.sh program
+echo "Assembling Gentoo output..."
+gcc -nostdlib -nostartfiles -o ./build/program ./build/program.s
+
+echo "Executing program:"
+echo ""
+./build/program
+RETURN_CODE=$?
+echo ${RETURN_CODE}

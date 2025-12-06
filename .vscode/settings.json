@@ -34,5 +34,6 @@
         "algorithm": "c",
         "functional": "c",
         "optional": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
