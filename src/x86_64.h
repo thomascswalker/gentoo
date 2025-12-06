@@ -3,6 +3,6 @@
 
 typedef struct ast ast;
 
-void x86_64_program(ast* node);
+void target_x86_64(ast* node);
 
 #endif

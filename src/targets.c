@@ -9,12 +9,9 @@ buffer_t* g_data;
 buffer_t* g_bss;
 buffer_t* g_text;
 
-target_t* target_new(target_type_t type)
+ast_emitter_t get_ast_emitter(target_type_t type)
 {
     log_info("Emitting %s ASM", target_type_to_string(type));
-
-    // Create the new target
-    target_t* target = (target_t*)calloc(1, sizeof(target_t));
 
     // Allocate the buffers for each section
     g_global = buffer_new();
@@ -27,21 +24,12 @@ target_t* target_new(target_type_t type)
     // architecture.
     switch (type)
     {
-    case X86_32:
     case X86_64:
-        target->program = x86_64_program;
-        break;
+        return target_x86_64;
+    case X86_32:
     default:
         // If no architeceture is specified or it's invalid, free
         // the target object and return null.
-        free(target);
         return NULL;
     }
-
-    return target;
-}
-
-void target_free(target_t* target)
-{
-    free(target);
 }

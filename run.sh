@@ -46,4 +46,7 @@ fi
 "${COMPILER_BIN}" "${INPUT_FILE}"
 
 gcc -nostdlib -nostartfiles -o ./build/program ./build/program.s
+
 ./build/program
+RETURN_CODE=$?
+echo ${RETURN_CODE}

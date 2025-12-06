@@ -213,20 +213,15 @@ void ast_emit(ast* node)
 
 char* ast_codegen(ast* node)
 {
-    target_t* target = target_new(X86_64);
-
-    switch (node->type)
+    if (node->type != AST_PROGRAM)
     {
-    case AST_PROGRAM:
-        log_debug("AST program");
-        target->program(node);
-        break;
-    default:
-        break;
+        log_error("Expected AST Program Node, got %d.", node->type);
+        exit(1);
     }
-    // We can free the target at this point because all relevant
-    // code is compiled into the global section buffers.
-    target_free(target);
+
+    // Get the emitter for the specified architecture
+    ast_emitter_t emitter = get_ast_emitter(X86_64);
+    emitter(node);
 
     // Copy the buffers into a primary buffer
     buffer_t* code_buffer = buffer_new();

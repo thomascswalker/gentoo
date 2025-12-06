@@ -14,6 +14,8 @@
 #define MOVQ(value, reg) B_TEXT("\tmovq $%s, %s\n", #value, "%" #reg)
 #define LEAQ(symbol, reg) B_TEXT("\tleaq %s(%%rip), %s\n", #symbol, "%" #reg)
 
+#define ZERO_REG(reg) B_TEXT("\txor %%%s, %%%s\n", #reg, #reg)
+
 // Macro for calling a system interrupt via code
 #define SYSCALL(code)                                                                                                  \
     MOVQ(code, rax);                                                                                                   \
@@ -26,7 +28,7 @@
     MOVQ(symbol##_len, rdx);                                                                                           \
     SYSCALL(1)
 
-void x86_64_program(ast* node)
+void target_x86_64(ast* node)
 {
     // Initialize sections
     B_DATA(".section .data\n");
@@ -47,7 +49,7 @@ void x86_64_program(ast* node)
     STDOUT(bye);
 
     // Exit code
-    MOVQ(42, rdi);
+    MOVQ(0, rdi);
 
     // Exit
     SYSCALL(60);

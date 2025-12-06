@@ -13,6 +13,7 @@ extern buffer_t* g_text;
 #define B_TEXT(...) buffer_printf(g_text, __VA_ARGS__)
 
 typedef struct ast ast;
+typedef void (*ast_emitter_t)(ast*);
 
 typedef enum target_type_t
 {
@@ -35,12 +36,6 @@ static const char* target_type_to_string(target_type_t type)
     return "";
 }
 
-typedef struct target_t
-{
-    void (*program)(ast*);
-} target_t;
-
-target_t* target_new(target_type_t type);
-void target_free(target_t* target);
+ast_emitter_t get_ast_emitter(target_type_t type);
 
 #endif
