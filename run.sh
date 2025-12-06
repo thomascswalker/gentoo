@@ -45,4 +45,5 @@ fi
 # Run the compiler with the chosen input file
 "${COMPILER_BIN}" "${INPUT_FILE}"
 
-./compile.sh program
+gcc -nostdlib -nostartfiles -o ./build/program ./build/program.s
+./build/program

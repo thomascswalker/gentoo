@@ -3,6 +3,7 @@
 #include "buffer.h"
 #include "log.h"
 #include "misc.h"
+#include "targets.h"
 #include "tokenize.h"
 
 #include <stdarg.h>
@@ -12,10 +13,6 @@
 
 // Track the current token
 static token_t* g_cur = NULL;
-static buffer_t* g_global;
-static buffer_t* g_data;
-static buffer_t* g_bss;
-static buffer_t* g_text;
 
 static symbol_t g_symbols[1024];
 
@@ -175,39 +172,39 @@ void ast_emit(ast* node)
     {
         // Constant values (int)
     case AST_CONSTANT:
-        LDR(node->data.constant.value);
+        // LDR(node->data.constant.value);
         break;
 
     case AST_ASSIGN:
         // New assignment
-        if (node->type == AST_DECLVAR)
-        {
-        }
-        // Exisiting assignment
-        else if (node->type == AST_IDENTIFIER)
-        {
-        }
+        // if (node->type == AST_DECLVAR)
+        // {
+        // }
+        // // Exisiting assignment
+        // else if (node->type == AST_IDENTIFIER)
+        // {
+        // }
         break;
 
         // Root level program
     case AST_PROGRAM:
-        DB(hello, "OUTPUT PROGRAM", 10);
-        EQU(helloLen, hello);
+        // DB(hello, "OUTPUT PROGRAM", 10);
+        // EQU(helloLen, hello);
 
-        GLOBAL(_start);
-        FUNC_START(_start);
+        // GLOBAL(_start);
+        // FUNC_START(_start);
 
-        MOV(eax, 4);
-        MOV(ebx, 1);
-        MOV(ecx, hello);
-        MOV(edx, helloLen);
-        INT(80h);
+        // MOV(eax, 4);
+        // MOV(ebx, 1);
+        // MOV(ecx, hello);
+        // MOV(edx, helloLen);
+        // INT(80h);
 
-        // 0 exit code
-        MOV(eax, 1); // Exit syscall
-        MOV(ebx, 0); // Error code 0
+        // // 0 exit code
+        // MOV(eax, 1); // Exit syscall
+        // MOV(ebx, 0); // Error code 0
 
-        INT(80h);
+        // INT(80h);
         break;
     default:
         break;
@@ -216,18 +213,20 @@ void ast_emit(ast* node)
 
 char* ast_codegen(ast* node)
 {
-    // Initialize each section (global, data, bss, text)
-    g_global = buffer_new();
-    buffer_puts(g_global, "bits 64\n");
-    g_data = buffer_new();
-    buffer_puts(g_data, "section .data\n");
-    g_bss = buffer_new();
-    buffer_puts(g_bss, "section .bss\n");
-    g_text = buffer_new();
-    buffer_puts(g_text, "section .text\n");
+    target_t* target = target_new(X86_64);
 
-    // Emit from the root (program) node into each section
-    ast_emit(node);
+    switch (node->type)
+    {
+    case AST_PROGRAM:
+        log_debug("AST program");
+        target->program(node);
+        break;
+    default:
+        break;
+    }
+    // We can free the target at this point because all relevant
+    // code is compiled into the global section buffers.
+    target_free(target);
 
     // Copy the buffers into a primary buffer
     buffer_t* code_buffer = buffer_new();
@@ -245,6 +244,7 @@ char* ast_codegen(ast* node)
     // Copy the primary buffer into a char array
     char* code = strdup(code_buffer->data);
     buffer_free(code_buffer);
+
     return code;
 }
 
