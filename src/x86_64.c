@@ -11,8 +11,8 @@
     B_DATA("\t%s: .%s %s\n", #symbol, #type, EXPAND(text));                                                            \
     B_DATA("\t%s_len = . - %s\n", #symbol, #symbol)
 
-#define MOVQ(value, reg) B_TEXT("\tmovq $%s, %s\n", #value, "%" #reg)
-#define LEAQ(symbol, reg) B_TEXT("\tleaq %s(%%rip), %s\n", #symbol, "%" #reg)
+#define MOVQ(value, reg) B_TEXT("\tmovq $%s, %%%s\n", #value, #reg)
+#define LEAQ(symbol, reg) B_TEXT("\tleaq %s(%%rip), %%%s\n", #symbol, #reg)
 
 #define ZERO_REG(reg) B_TEXT("\txor %%%s, %%%s\n", #reg, #reg)
 
