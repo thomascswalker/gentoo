@@ -17,7 +17,7 @@ Cpp11BracedListStyle: true
 AlwaysBreakTemplateDeclarations: Yes
 
 # Line length
-ColumnLimit: 120
+ColumnLimit: 80
 
 # Spacing
 SpaceAfterCStyleCast: false
