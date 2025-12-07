@@ -49,7 +49,7 @@ echo "Running Gentoo compiler..."
 "${COMPILER_BIN}" "${INPUT_FILE}"
 
 echo "Assembling Gentoo output..."
-gcc -nostdlib -nostartfiles -o ./build/program ./build/program.s
+gcc -masm=intel -nostdlib -nostartfiles -o ./build/program ./build/program.s
 
 echo "Executing program:"
 echo ""

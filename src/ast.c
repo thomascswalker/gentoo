@@ -92,7 +92,8 @@ void ast_fmt(char* buffer, ast* node)
             free(temp);
         }
 
-        sprintf(buffer, "{\"type\": \"%s\", \"body\": [%s]}", get_node_type_string(node->type), bodies);
+        sprintf(buffer, "{\"type\": \"%s\", \"body\": [%s]}",
+                get_node_type_string(node->type), bodies);
         free(bodies);
         break;
     }
@@ -118,23 +119,25 @@ void ast_fmt(char* buffer, ast* node)
             free(temp);
         }
 
-        sprintf(buffer, "{\"type\": \"%s\", \"statements\": [%s]}", get_node_type_string(node->type), stmts);
+        sprintf(buffer, "{\"type\": \"%s\", \"statements\": [%s]}",
+                get_node_type_string(node->type), stmts);
         free(stmts);
         break;
     }
     case AST_IDENTIFIER:
-        sprintf(buffer, "{\"type\": \"%s\", \"name\": \"%s\"}", get_node_type_string(node->type),
-                node->data.identifier.name);
+        sprintf(buffer, "{\"type\": \"%s\", \"name\": \"%s\"}",
+                get_node_type_string(node->type), node->data.identifier.name);
         break;
     case AST_CONSTANT:
-        sprintf(buffer, "{\"type\": \"%s\", \"value\": %d}", get_node_type_string(node->type),
-                node->data.constant.value);
+        sprintf(buffer, "{\"type\": \"%s\", \"value\": %d}",
+                get_node_type_string(node->type), node->data.constant.value);
         break;
     case AST_DECLVAR:
         char* ident_buffer = (char*)calloc(1, 512);
         ast_fmt(ident_buffer, node->data.declvar.identifier);
-        sprintf(buffer, "{\"type\": \"%s\", \"ident\": %s, \"is_const\": %s}", get_node_type_string(node->type),
-                ident_buffer, node->data.declvar.is_const ? "true" : "false");
+        sprintf(buffer, "{\"type\": \"%s\", \"ident\": %s, \"is_const\": %s}",
+                get_node_type_string(node->type), ident_buffer,
+                node->data.declvar.is_const ? "true" : "false");
         free(ident_buffer);
         break;
     case AST_ASSIGN:
@@ -147,8 +150,8 @@ void ast_fmt(char* buffer, ast* node)
         }
         ast_fmt(lhs_buffer, node->data.assign.lhs);
         ast_fmt(rhs_buffer, node->data.assign.rhs);
-        sprintf(buffer, "{\"type\": \"%s\", \"lhs\": %s, \"rhs\": %s}", get_node_type_string(node->type), lhs_buffer,
-                rhs_buffer);
+        sprintf(buffer, "{\"type\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
+                get_node_type_string(node->type), lhs_buffer, rhs_buffer);
         free(lhs_buffer);
         free(rhs_buffer);
         break;
@@ -158,55 +161,12 @@ void ast_fmt(char* buffer, ast* node)
         char* rhs_buffer = (char*)malloc(512);
         ast_fmt(lhs_buffer, node->data.binop.lhs);
         ast_fmt(rhs_buffer, node->data.binop.rhs);
-        sprintf(buffer, "{\"type\": \"%s\", \"op\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
-                get_node_type_string(node->type), binop_to_string(node->data.binop.op), lhs_buffer, rhs_buffer);
+        sprintf(buffer,
+                "{\"type\": \"%s\", \"op\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
+                get_node_type_string(node->type),
+                binop_to_string(node->data.binop.op), lhs_buffer, rhs_buffer);
         free(lhs_buffer);
         free(rhs_buffer);
-        break;
-    }
-}
-
-void ast_emit(ast* node)
-{
-    switch (node->type)
-    {
-        // Constant values (int)
-    case AST_CONSTANT:
-        // LDR(node->data.constant.value);
-        break;
-
-    case AST_ASSIGN:
-        // New assignment
-        // if (node->type == AST_DECLVAR)
-        // {
-        // }
-        // // Exisiting assignment
-        // else if (node->type == AST_IDENTIFIER)
-        // {
-        // }
-        break;
-
-        // Root level program
-    case AST_PROGRAM:
-        // DB(hello, "OUTPUT PROGRAM", 10);
-        // EQU(helloLen, hello);
-
-        // GLOBAL(_start);
-        // FUNC_START(_start);
-
-        // MOV(eax, 4);
-        // MOV(ebx, 1);
-        // MOV(ecx, hello);
-        // MOV(edx, helloLen);
-        // INT(80h);
-
-        // // 0 exit code
-        // MOV(eax, 1); // Exit syscall
-        // MOV(ebx, 0); // Error code 0
-
-        // INT(80h);
-        break;
-    default:
         break;
     }
 }
@@ -221,7 +181,13 @@ char* ast_codegen(ast* node)
 
     // Get the emitter for the specified architecture
     ast_emitter_t emitter = get_ast_emitter(X86_64);
+    if (!emitter)
+    {
+        log_error("Emitter function is not valid.");
+        exit(1);
+    }
     emitter(node);
+    log_info("Completed emission.");
 
     // Copy the buffers into a primary buffer
     buffer_t* code_buffer = buffer_new();
@@ -331,7 +297,8 @@ void require(token_type_t type)
     log_debug("Requiring %s...", get_token_type_string(type));
     if (!expect(type))
     {
-        log_error("Expected token %s, got %s.", get_token_type_string(type), get_token_type_string(g_cur->type));
+        log_error("Expected token %s, got %s.", get_token_type_string(type),
+                  get_token_type_string(g_cur->type));
         exit(1);
     }
     log_debug("Found %s", get_token_type_string(g_cur->type));
@@ -339,10 +306,12 @@ void require(token_type_t type)
 
 void require_n(token_type_t type, size_t offset)
 {
-    log_debug("Requiring %s at offset %d...", get_token_type_string(type), offset);
+    log_debug("Requiring %s at offset %d...", get_token_type_string(type),
+              offset);
     if (!expect_n(type, offset))
     {
-        log_error("Expected token %s at offset %d, got %s.", get_token_type_string(type), offset,
+        log_error("Expected token %s at offset %d, got %s.",
+                  get_token_type_string(type), offset,
                   get_token_type_string((g_cur + offset)->type));
         exit(1);
     }
@@ -357,8 +326,9 @@ bool can_continue()
 void next()
 {
     g_cur++;
-    log_debug("  Current token: start=%d, end=%d, type=%s, value='%s'", g_cur->start, g_cur->end,
-              get_token_type_string(g_cur->type), g_cur->value);
+    log_debug("  Current token: start=%d, end=%d, type=%s, value='%s'",
+              g_cur->start, g_cur->end, get_token_type_string(g_cur->type),
+              g_cur->value);
 }
 
 ast* parse_constant()
@@ -384,7 +354,14 @@ ast* parse_binop()
 {
     log_debug("Parsing binary operation...");
     ast* expr = ast_new(AST_BINOP);
-    expr->data.binop.lhs = parse_identifier();
+    if (is_constant(g_cur->type))
+    {
+        expr->data.binop.lhs = parse_constant();
+    }
+    else if (g_cur->type == TOK_IDENTIFIER)
+    {
+        expr->data.binop.lhs = parse_identifier();
+    }
 
     switch (g_cur->type)
     {
@@ -401,7 +378,8 @@ ast* parse_binop()
         expr->data.binop.op = BIN_DIV;
         break;
     default:
-        throw("Expected binary operator. Got %s", get_token_type_string(g_cur->type));
+        throw("Expected binary operator. Got %s",
+              get_token_type_string(g_cur->type));
     }
     next();
 
