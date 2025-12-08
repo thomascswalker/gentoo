@@ -3,9 +3,9 @@
 
 typedef struct ast ast;
 
-void emit_x86_64_binop(ast* node);
-void emit_x86_64_statement(ast* node);
-void emit_x86_64_body(ast* node);
-void target_x86_64(ast* node);
+void x86_binop(ast* node);
+void x86_statement(ast* node);
+void x86_body(ast* node);
+void target_x86(ast* node);
 
 #endif

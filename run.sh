@@ -29,17 +29,19 @@ echo "Compiling with gcc..."
 gcc ${CFLAGS[@]} ./src/*.c -o "${COMPILER_BIN}"
 
 # Determine input file (positional argument). If none given, use the example.
-INPUT_FILE="${1:-}"
-if [ -z "${INPUT_FILE}" ]; then
-    INPUT_FILE="./examples/program.${EXT}"
+INPUT_NAME="${1:-}"
+INPUT_FILE=""
+if [ -z "${INPUT_NAME}" ]; then
+    INPUT_NAME="program"
+    INPUT_FILE="./examples/${INPUT_NAME}.${EXT}"
 else
     # If the provided path exists use it, otherwise try under ./examples
-    if [ -f "${INPUT_FILE}" ]; then
+    if [ -f "${INPUT_NAME}" ]; then
         : # use as-is
-    elif [ -f "./examples/${INPUT_FILE}" ]; then
-        INPUT_FILE="./examples/${INPUT_FILE}"
+    elif [ -f "./examples/${INPUT_NAME}" ]; then
+        INPUT_FILE="./examples/${INPUT_NAME}"
     else
-        echo "Input file '${INPUT_FILE}' not found." >&2
+        echo "Input file '${INPUT_NAME}' not found." >&2
         exit 2
     fi
 fi
@@ -49,10 +51,10 @@ echo "Running Gentoo compiler..."
 "${COMPILER_BIN}" "${INPUT_FILE}"
 
 echo "Assembling Gentoo output..."
-gcc -masm=intel -nostdlib -nostartfiles -o ./build/program ./build/program.s
+nasm -f elf64 ./build/${INPUT_NAME}.asm -o ./build/${INPUT_NAME}.o
+gcc ./build/${INPUT_NAME}.o -o ./build/${INPUT_NAME} -z noexecstack
 
-echo "Executing program:"
-echo ""
+echo "Executing program '${INPUT_NAME}':"
 ./build/program
 RETURN_CODE=$?
 echo ${RETURN_CODE}
