@@ -34,6 +34,8 @@ char* get_node_type_string(ast_node_t type)
         return "ASSIGN";
     case AST_BINOP:
         return "BINOP";
+    case AST_RETURN:
+        return "RETURN";
     default:
         return "UNKNOWN";
     }
@@ -168,6 +170,13 @@ void ast_fmt(char* buffer, ast* node)
         free(lhs_buffer);
         free(rhs_buffer);
         break;
+    case AST_RETURN:
+        char* ret_buffer = (char*)malloc(512);
+        ast_fmt(ret_buffer, node->data.ret.node);
+        sprintf(buffer, "{\"type\": \"%s\", \"expr\": %s}",
+                get_node_type_string(node->type), ret_buffer);
+        free(ret_buffer);
+        break;
     }
 }
 
@@ -260,6 +269,9 @@ void ast_free(ast* node)
         ast_free(node->data.binop.lhs);
         ast_free(node->data.binop.rhs);
         break;
+    case AST_RETURN:
+        ast_free(node->data.ret.node);
+        break;
     default:
         break;
     }
@@ -323,6 +335,7 @@ bool can_continue()
     return g_cur != NULL && g_cur->type != 0;
 }
 
+/* Move to the next token to parse. */
 void next()
 {
     g_cur++;
@@ -331,6 +344,7 @@ void next()
               g_cur->value);
 }
 
+/* Parse a constant (literal) value (5, "string", 4.3234, etc.). */
 ast* parse_constant()
 {
     log_debug("Parsing constant...");
@@ -341,6 +355,7 @@ ast* parse_constant()
     return expr;
 }
 
+/* Parse an identifier: `let name <== ...` or `... 5 * name <== ...`*/
 ast* parse_identifier()
 {
     log_debug("Parsing identifier...");
@@ -350,42 +365,52 @@ ast* parse_identifier()
     return expr;
 }
 
-ast* parse_binop()
+/**
+ * Parse a one of the below types.
+ *
+ *   - Literal (number, string, boolean, etc.)
+ *   - Identifier (variable or constant)
+ *   - Parenthesis expression: '(' expression ')'
+ *   - Unary/prefix operator applied to a factor (e.g., +, -, !)
+ */
+ast* parse_factor()
 {
-    log_debug("Parsing binary operation...");
-    ast* expr = ast_new(AST_BINOP);
     if (is_constant(g_cur->type))
     {
-        expr->data.binop.lhs = parse_constant();
+        return parse_constant();
     }
     else if (g_cur->type == TOK_IDENTIFIER)
     {
-        expr->data.binop.lhs = parse_identifier();
+        return parse_identifier();
     }
-
-    switch (g_cur->type)
+    else if (g_cur->type == TOK_L_PAREN)
     {
-    case TOK_ADD:
-        expr->data.binop.op = BIN_ADD;
-        break;
-    case TOK_SUB:
-        expr->data.binop.op = BIN_SUB;
-        break;
-    case TOK_MUL:
-        expr->data.binop.op = BIN_MUL;
-        break;
-    case TOK_DIV:
-        expr->data.binop.op = BIN_DIV;
-        break;
-    default:
-        throw("Expected binary operator. Got %s",
-              get_token_type_string(g_cur->type));
+        next();
+        ast* expr = parse_expression();
+        require(TOK_R_PAREN);
+        next();
+        return expr;
     }
-    next();
+    throw("Unexpected token in factor: %s", get_token_type_string(g_cur->type));
+    return NULL;
+}
 
-    expr->data.binop.rhs = parse_expression();
-
-    return expr;
+ast* parse_term()
+{
+    ast* node = parse_factor();
+    while (g_cur->type == TOK_MUL || g_cur->type == TOK_DIV)
+    {
+        ast* bin = ast_new(AST_BINOP);
+        bin->data.binop.lhs = node;
+        if (g_cur->type == TOK_MUL)
+            bin->data.binop.op = BIN_MUL;
+        else
+            bin->data.binop.op = BIN_DIV;
+        next();
+        bin->data.binop.rhs = parse_factor();
+        node = bin;
+    }
+    return node;
 }
 
 ast* parse_expression()
@@ -411,7 +436,24 @@ ast* parse_expression()
     }
     else
     {
-        return parse_binop();
+        ast* node = parse_term();
+        while (g_cur->type == TOK_ADD || g_cur->type == TOK_SUB)
+        {
+            ast* bin = ast_new(AST_BINOP);
+            bin->data.binop.lhs = node;
+            if (g_cur->type == TOK_ADD)
+            {
+                bin->data.binop.op = BIN_ADD;
+            }
+            else
+            {
+                bin->data.binop.op = BIN_SUB;
+            }
+            next();
+            bin->data.binop.rhs = parse_term();
+            node = bin;
+        }
+        return node;
     }
 }
 
@@ -469,10 +511,26 @@ ast* parse_new_assignment()
     return expr;
 }
 
+/* return = "return" expr*/
+ast* parse_ret()
+{
+    ast* expr = ast_new(AST_RETURN);
+    next();
+    expr->data.ret.node = parse_expression();
+    return expr;
+}
+
 /* `stmt = assign | call | declvar | declfunc | declclass` */
 ast* parse_statement()
 {
     log_debug("Parsing statement...");
+
+    // Parse return statements.
+    if (expect(TOK_RETURN))
+    {
+        return parse_ret();
+    }
+
     // Parse new assignment if the next token is an
     // identifier and the second-next token is
     // an assignment operator (`=`).
