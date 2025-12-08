@@ -144,6 +144,10 @@ void x86_assign(ast* node)
     x86_comment("Exit assign");
 }
 
+void x86_return(ast* node)
+{
+}
+
 void x86_statement(ast* node)
 {
     log_info("Emitting x86_64 statement...");
@@ -159,6 +163,9 @@ void x86_statement(ast* node)
         break;
     case AST_DECLVAR:
         x86_declvar(node);
+        break;
+    case AST_RETURN:
+        x86_return(node);
         break;
     default:
         break;

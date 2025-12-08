@@ -21,6 +21,7 @@ typedef enum ast_node_t
     // Statements
     AST_DECLVAR,
     AST_ASSIGN,
+    AST_RETURN,
 
     // Expressions
     AST_IDENTIFIER,
@@ -80,6 +81,7 @@ AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop, 4,
          AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
+AST_NODE(ret, 12, AST_PROP(ast*, node));
 
 #undef PAD
 #undef AST_PROP
@@ -102,6 +104,7 @@ struct ast
         struct ast_constant constant;
         struct ast_assign assign;
         struct ast_binop binop;
+        struct ast_ret ret;
     } data;
     size_t start;
     size_t end;
@@ -121,6 +124,7 @@ ast* parse_binop();
 ast* parse_expression();
 ast* parse_assignment();
 ast* parse_new_assignment();
+ast* parse_ret();
 ast* parse_statement();
 ast* parse_body();
 ast* parse_program();

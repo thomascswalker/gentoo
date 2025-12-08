@@ -1,3 +1,4 @@
 const var1 = 5;
 const var2 = 10 + var1;
 var1 = 12;
+return var1;

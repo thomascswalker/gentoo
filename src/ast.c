@@ -34,6 +34,8 @@ char* get_node_type_string(ast_node_t type)
         return "ASSIGN";
     case AST_BINOP:
         return "BINOP";
+    case AST_RETURN:
+        return "RETURN";
     default:
         return "UNKNOWN";
     }
@@ -168,6 +170,13 @@ void ast_fmt(char* buffer, ast* node)
         free(lhs_buffer);
         free(rhs_buffer);
         break;
+    case AST_RETURN:
+        char* ret_buffer = (char*)malloc(512);
+        ast_fmt(ret_buffer, node->data.ret.node);
+        sprintf(buffer, "{\"type\": \"%s\", \"expr\": %s}",
+                get_node_type_string(node->type), ret_buffer);
+        free(ret_buffer);
+        break;
     }
 }
 
@@ -259,6 +268,9 @@ void ast_free(ast* node)
     case AST_BINOP:
         ast_free(node->data.binop.lhs);
         ast_free(node->data.binop.rhs);
+        break;
+    case AST_RETURN:
+        ast_free(node->data.ret.node);
         break;
     default:
         break;
@@ -469,10 +481,26 @@ ast* parse_new_assignment()
     return expr;
 }
 
+/* return = "return" expr*/
+ast* parse_ret()
+{
+    ast* expr = ast_new(AST_RETURN);
+    next();
+    expr->data.ret.node = parse_expression();
+    return expr;
+}
+
 /* `stmt = assign | call | declvar | declfunc | declclass` */
 ast* parse_statement()
 {
     log_debug("Parsing statement...");
+
+    // Parse return statements.
+    if (expect(TOK_RETURN))
+    {
+        return parse_ret();
+    }
+
     // Parse new assignment if the next token is an
     // identifier and the second-next token is
     // an assignment operator (`=`).
