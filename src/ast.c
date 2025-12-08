@@ -335,6 +335,7 @@ bool can_continue()
     return g_cur != NULL && g_cur->type != 0;
 }
 
+/* Move to the next token to parse. */
 void next()
 {
     g_cur++;
@@ -343,6 +344,7 @@ void next()
               g_cur->value);
 }
 
+/* Parse a constant (literal) value (5, "string", 4.3234, etc.). */
 ast* parse_constant()
 {
     log_debug("Parsing constant...");
@@ -353,6 +355,7 @@ ast* parse_constant()
     return expr;
 }
 
+/* Parse an identifier: `let name <== ...` or `... 5 * name <== ...`*/
 ast* parse_identifier()
 {
     log_debug("Parsing identifier...");
@@ -362,42 +365,52 @@ ast* parse_identifier()
     return expr;
 }
 
-ast* parse_binop()
+/**
+ * Parse a one of the below types.
+ *
+ *   - Literal (number, string, boolean, etc.)
+ *   - Identifier (variable or constant)
+ *   - Parenthesis expression: '(' expression ')'
+ *   - Unary/prefix operator applied to a factor (e.g., +, -, !)
+ */
+ast* parse_factor()
 {
-    log_debug("Parsing binary operation...");
-    ast* expr = ast_new(AST_BINOP);
     if (is_constant(g_cur->type))
     {
-        expr->data.binop.lhs = parse_constant();
+        return parse_constant();
     }
     else if (g_cur->type == TOK_IDENTIFIER)
     {
-        expr->data.binop.lhs = parse_identifier();
+        return parse_identifier();
     }
-
-    switch (g_cur->type)
+    else if (g_cur->type == TOK_L_PAREN)
     {
-    case TOK_ADD:
-        expr->data.binop.op = BIN_ADD;
-        break;
-    case TOK_SUB:
-        expr->data.binop.op = BIN_SUB;
-        break;
-    case TOK_MUL:
-        expr->data.binop.op = BIN_MUL;
-        break;
-    case TOK_DIV:
-        expr->data.binop.op = BIN_DIV;
-        break;
-    default:
-        throw("Expected binary operator. Got %s",
-              get_token_type_string(g_cur->type));
+        next();
+        ast* expr = parse_expression();
+        require(TOK_R_PAREN);
+        next();
+        return expr;
     }
-    next();
+    throw("Unexpected token in factor: %s", get_token_type_string(g_cur->type));
+    return NULL;
+}
 
-    expr->data.binop.rhs = parse_expression();
-
-    return expr;
+ast* parse_term()
+{
+    ast* node = parse_factor();
+    while (g_cur->type == TOK_MUL || g_cur->type == TOK_DIV)
+    {
+        ast* bin = ast_new(AST_BINOP);
+        bin->data.binop.lhs = node;
+        if (g_cur->type == TOK_MUL)
+            bin->data.binop.op = BIN_MUL;
+        else
+            bin->data.binop.op = BIN_DIV;
+        next();
+        bin->data.binop.rhs = parse_factor();
+        node = bin;
+    }
+    return node;
 }
 
 ast* parse_expression()
@@ -423,7 +436,24 @@ ast* parse_expression()
     }
     else
     {
-        return parse_binop();
+        ast* node = parse_term();
+        while (g_cur->type == TOK_ADD || g_cur->type == TOK_SUB)
+        {
+            ast* bin = ast_new(AST_BINOP);
+            bin->data.binop.lhs = node;
+            if (g_cur->type == TOK_ADD)
+            {
+                bin->data.binop.op = BIN_ADD;
+            }
+            else
+            {
+                bin->data.binop.op = BIN_SUB;
+            }
+            next();
+            bin->data.binop.rhs = parse_term();
+            node = bin;
+        }
+        return node;
     }
 }
 

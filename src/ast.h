@@ -120,7 +120,9 @@ char* ast_codegen(ast* node);
 /* Parsing functions for each AST Node type */
 
 ast* parse_constant();
-ast* parse_binop();
+ast* parse_identifier();
+ast* parse_factor();
+ast* parse_term();
 ast* parse_expression();
 ast* parse_assignment();
 ast* parse_new_assignment();
