@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     log_debug("%s", code);
 
     // Output to asm file
-    write_file("build/program.s", code);
+    write_file("build/program.asm", code);
     free(code);
 
     return 0;

@@ -25,7 +25,7 @@ ast_emitter_t get_ast_emitter(target_type_t type)
     switch (type)
     {
     case X86_64:
-        return target_x86_64;
+        return target_x86;
     case X86_32:
     default:
         // If no architeceture is specified or it's invalid, free

@@ -1,6 +1,6 @@
 {
     "files.associations": {
-        "*.s": "asm-intel-x86-generic",
+        "*.s": "x86asm",
         "*.h": "cpp",
         "*.t": "plaintext",
         "atomic": "c",

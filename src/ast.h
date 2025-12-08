@@ -65,11 +65,11 @@ typedef struct symbol_t
 
 #define PAD(n) char __padding[n]
 #define AST_PROP(type, name) type name;
-#define AST_NODE(name, pad, ...)                                                                                       \
-    typedef struct ast_##name                                                                                          \
-    {                                                                                                                  \
-        __VA_ARGS__                                                                                                    \
-        PAD(pad);                                                                                                      \
+#define AST_NODE(name, pad, ...)                                               \
+    typedef struct ast_##name                                                  \
+    {                                                                          \
+        __VA_ARGS__                                                            \
+        PAD(pad);                                                              \
     } ast_##name
 
 AST_NODE(program, 8, AST_PROP(ast**, body) AST_PROP(int, count));
@@ -78,7 +78,8 @@ AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
-AST_NODE(binop, 4, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
+AST_NODE(binop, 4,
+         AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
 
 #undef PAD
 #undef AST_PROP
@@ -111,7 +112,6 @@ struct ast
 ast* ast_new(ast_node_t type);
 void ast_free(ast* node);
 void ast_fmt(char* buffer, ast* node);
-void ast_emit(ast* node);
 char* ast_codegen(ast* node);
 
 /* Parsing functions for each AST Node type */
