@@ -15,7 +15,7 @@ typedef enum token_type_t
 
     TOK_IDENTIFIER = 128,
     TOK_DECLVAR,
-    TOK_DEF,
+    TOK_DECLFN,
     TOK_RETURN,
     TOK_IF,
     TOK_ELSE,
@@ -27,6 +27,7 @@ typedef enum token_type_t
     TOK_SUB = '-',
     TOK_MUL = '*',
     TOK_DIV = '/',
+    TOK_ARROW,
 
     TOK_SPACE = ' ',
     TOK_TAB = '\t',

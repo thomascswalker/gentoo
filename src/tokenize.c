@@ -37,8 +37,8 @@ void free_token(token_t* token)
     }
 }
 
-#define CASE(t)                                                                                                        \
-    case TOK_##t:                                                                                                      \
+#define CASE(t)                                                                \
+    case TOK_##t:                                                              \
         return #t;
 char* get_token_type_string(enum token_type_t type)
 {
@@ -48,7 +48,7 @@ char* get_token_type_string(enum token_type_t type)
         CASE(NUMBER)
         CASE(IDENTIFIER)
         CASE(DECLVAR)
-        CASE(DEF)
+        CASE(DECLFN)
         CASE(RETURN)
         CASE(IF)
         CASE(ELSE)
@@ -59,6 +59,7 @@ char* get_token_type_string(enum token_type_t type)
         CASE(SUB)
         CASE(MUL)
         CASE(DIV)
+        CASE(ARROW)
         CASE(SPACE)
         CASE(TAB)
         CASE(NEWLINE)
@@ -84,12 +85,14 @@ void print_token(token_t* token)
     {
         return;
     }
-    log_debug("  [%s, %d, %d] -> %s", get_token_type_string(token->type), token->start, token->end, token->value);
+    log_debug("  [%s, %d, %d] -> %s", get_token_type_string(token->type),
+              token->start, token->end, token->value);
 }
 
 bool is_whitespace(char c)
 {
-    return c == TOK_SPACE || c == TOK_TAB || c == TOK_NEWLINE || c == TOK_CARRIAGE;
+    return c == TOK_SPACE || c == TOK_TAB || c == TOK_NEWLINE ||
+           c == TOK_CARRIAGE;
 }
 
 bool is_keyword(char c)
@@ -110,6 +113,19 @@ bool is_operator(char c)
 bool is_semicolon(char c)
 {
     return c == ';';
+}
+
+bool is_compound_op(char* str)
+{
+    if (is_operator(str[0]) && str[1] == '=')
+    {
+        return true;
+    }
+    if (str[0] == '=' && str[1] == '>')
+    {
+        return true;
+    }
+    return false;
 }
 
 token_t* tokenize_number()
@@ -155,9 +171,9 @@ token_t* tokenize_keyword()
     {
         token->type = TOK_DECLVAR;
     }
-    else if (strcmp(token->value, "def") == 0)
+    else if (strcmp(token->value, "fn") == 0)
     {
-        token->type = TOK_DEF;
+        token->type = TOK_DECLFN;
     }
     else if (strcmp(token->value, "return") == 0)
     {
@@ -201,13 +217,33 @@ token_t* tokenize_string()
 token_t* tokenize_operator()
 {
     token_t* token = new_token();
-    alloc_token(token, 2);
-    token->value[0] = g_buf[g_pos];
-    token->value[1] = 0;
-    token->type = (token_type_t)token->value[0];
-    token->start = g_pos;
-    g_pos++;
-    token->end = g_pos;
+
+    // Parse compound (2 character) operators
+    if (is_compound_op(&g_buf[g_pos]))
+    {
+        alloc_token(token, 3);
+        token->value[0] = g_buf[g_pos];
+        token->value[1] = g_buf[g_pos + 1];
+        token->value[2] = 0;
+        token->start = g_pos;
+        if (strcmp(token->value, "=>") == 0)
+        {
+            token->type = TOK_ARROW;
+        }
+        g_pos += 2;
+        token->end = g_pos;
+    }
+    // Parse simple (1 character) operators
+    else
+    {
+        alloc_token(token, 2);
+        token->value[0] = g_buf[g_pos];
+        token->value[1] = 0;
+        token->type = (token_type_t)token->value[0];
+        token->start = g_pos;
+        g_pos++;
+        token->end = g_pos;
+    }
     return token;
 }
 
@@ -316,7 +352,8 @@ size_t tokenize(char* buffer, token_t* tokens)
 
 bool is_binop(token_type_t type)
 {
-    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL || type == TOK_DIV;
+    return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL ||
+           type == TOK_DIV;
 }
 
 bool is_constant(token_type_t type)

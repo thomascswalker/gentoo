@@ -17,9 +17,11 @@ typedef enum ast_node_t
     // Top level
     AST_PROGRAM,
     AST_BODY,
+    AST_BLOCK,
 
     // Statements
     AST_DECLVAR,
+    AST_DECLFN,
     AST_ASSIGN,
     AST_RETURN,
 
@@ -75,7 +77,9 @@ typedef struct symbol_t
 
 AST_NODE(program, 8, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, 8, AST_PROP(ast**, statements) AST_PROP(int, count));
+AST_NODE(block, 8, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, 8, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
+AST_NODE(declfn, 8, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
 AST_NODE(identifier, 12, AST_PROP(char*, name));
 AST_NODE(constant, 12, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, 8, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
@@ -99,7 +103,9 @@ struct ast
     {
         struct ast_program program;
         struct ast_body body;
+        struct ast_block block;
         struct ast_declvar declvar;
+        struct ast_declfn declfn;
         struct ast_identifier identifier;
         struct ast_constant constant;
         struct ast_assign assign;
@@ -125,9 +131,11 @@ ast* parse_factor();
 ast* parse_term();
 ast* parse_expression();
 ast* parse_assignment();
-ast* parse_new_assignment();
+ast* parse_declvar();
+ast* parse_declfn();
 ast* parse_ret();
 ast* parse_statement();
+ast* parse_block();
 ast* parse_body();
 ast* parse_program();
 

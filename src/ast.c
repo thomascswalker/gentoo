@@ -485,7 +485,7 @@ ast* parse_assignment()
     return expr;
 }
 
-ast* parse_new_assignment()
+ast* parse_declvar()
 {
     log_debug("Parsing new assignment...");
 
@@ -516,6 +516,40 @@ ast* parse_new_assignment()
     return expr;
 }
 
+ast* parse_declfn()
+{
+    log_debug("Parsing declfn...");
+    next(); // Skip `fn`
+
+    ast* expr = ast_new(AST_DECLFN);
+
+    // Parse the function mame
+    require(TOK_IDENTIFIER);
+    expr->data.declfn.identifier = parse_identifier();
+
+    // Parse arguments
+    require(TOK_L_PAREN);
+    next();
+    require(TOK_R_PAREN);
+    next();
+
+    // Parse return type
+    require(TOK_COLON);
+    next();
+
+    // Return type
+    require(TOK_IDENTIFIER);
+    next();
+
+    // Arrow
+    require(TOK_ARROW);
+    next();
+
+    expr->data.declfn.block = parse_block();
+
+    return expr;
+}
+
 /* return = "return" expr*/
 ast* parse_ret()
 {
@@ -529,6 +563,11 @@ ast* parse_ret()
 ast* parse_statement()
 {
     log_debug("Parsing statement...");
+
+    if (expect(TOK_DECLFN))
+    {
+        return parse_declfn();
+    }
 
     // Parse return statements.
     if (expect(TOK_RETURN))
@@ -546,7 +585,7 @@ ast* parse_statement()
     {
         require_n(TOK_IDENTIFIER, 1);
         require_n(TOK_ASSIGN, 2);
-        return parse_new_assignment();
+        return parse_declvar();
     }
 
     // Parse existing assignment if the next token is
@@ -562,6 +601,34 @@ ast* parse_statement()
 
     log_error("Invalid token %s", get_token_type_string(g_cur->type));
     exit(1);
+}
+
+ast* parse_block()
+{
+    log_debug("Parsing block...");
+
+    require(TOK_L_BRACKET);
+    next();
+
+    ast* expr = ast_new(AST_BLOCK);
+    struct ast_block* block = &expr->data.block;
+
+    // Assume a maximum of 32 statements.
+    block->statements = calloc(32, sizeof(ast*));
+
+    block->count = 0;
+    while (can_continue())
+    {
+        block->statements[block->count] = parse_statement();
+        block->count++;
+        require(TOK_SEMICOLON);
+        next();
+    }
+
+    require(TOK_R_BRACKET);
+    next();
+
+    return expr;
 }
 
 ast* parse_body()
@@ -612,7 +679,7 @@ ast* parse(char* buffer)
     size_t count = tokenize(buffer, tokens);
     log_debug("Found %d tokens.", count);
 
-#ifdef DEBUG
+#ifdef _DEBUG
     for (int i = 0; i < count; i++)
     {
         print_token(&tokens[i]);
@@ -622,6 +689,10 @@ ast* parse(char* buffer)
     g_cur = &tokens[0];
 
     ast* program = parse_program();
+    char* ast_buffer = (char*)calloc(1, 4096);
+    ast_fmt(ast_buffer, program);
+    log_debug("%s", ast_buffer);
+    free(ast_buffer);
 
     for (int i = 0; i < count; i++)
     {
