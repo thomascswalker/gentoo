@@ -1,3 +1,5 @@
 let a = 3 * (7 - 5) * 12;
 let b = a - 16;
+let c = 10;
+let d = b * c;
 return b;

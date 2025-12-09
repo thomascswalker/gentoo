@@ -33,7 +33,7 @@ Assembly output is in x86-64 (AT&T) format.
 ### Assignment
 
 ```rust
-let my_var = 12;
-const my_var2 = 16;
-const my_var3 = 32;
+let a = 3 * (7 - 5) * 12;
+let b = a - 16;
+return b;
 ```

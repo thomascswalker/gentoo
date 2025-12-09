@@ -15,6 +15,7 @@
 static token_t* g_cur = NULL;
 
 static symbol_t g_symbols[1024];
+static buffer_t* ast_buffer;
 
 char* get_node_type_string(ast_node_t type)
 {
@@ -403,9 +404,13 @@ ast* parse_term()
         ast* bin = ast_new(AST_BINOP);
         bin->data.binop.lhs = node;
         if (g_cur->type == TOK_MUL)
+        {
             bin->data.binop.op = BIN_MUL;
+        }
         else
+        {
             bin->data.binop.op = BIN_DIV;
+        }
         next();
         bin->data.binop.rhs = parse_factor();
         node = bin;
@@ -584,8 +589,6 @@ ast* parse_body()
 
 ast* parse_program()
 {
-    log_debug("Parsing program...");
-
     ast* expr = ast_new(AST_PROGRAM);
 
     // Assume a maximum of 32 bodies.
@@ -619,9 +622,6 @@ ast* parse(char* buffer)
     g_cur = &tokens[0];
 
     ast* program = parse_program();
-    char program_buffer[1024];
-    ast_fmt(program_buffer, program);
-    log_debug("Program: %s", program_buffer);
 
     for (int i = 0; i < count; i++)
     {

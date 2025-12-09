@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define TOKEN_COUNT 1024
+#define TOKEN_COUNT 4096
 
 typedef enum token_type_t
 {

@@ -8,6 +8,7 @@
 #define STRING asciz
 #define EXPAND(x) #x
 #define NEW_LINE "\\n"
+#define REG_COUNT 14
 
 // General purpose registers
 #define RAX "rax"
@@ -29,13 +30,31 @@
 #define RBP "rbp" // Snapshot of stack pointer
 #define RSP "rsp" // Stack pointer
 
+#define SYMBOL(symbol, type, text)                                             \
+    B_DATA("\t%s: .%s %s\n", #symbol, #type, EXPAND(text));                    \
+    B_DATA("\t%s_len = . - %s\n", #symbol, #symbol)
+#define SYMBOL2(symbol, text)                                                  \
+    B_DATA("\t" #symbol ": .asciz \"%s\"\n", text);                            \
+    B_DATA("\t" #symbol "_len = . - " #symbol "\n")
+
+// Macro for calling a system interrupt via code (use rax for syscall number)
+#define SYSCALL(code)                                                          \
+    B_TEXT("\tmov %s, %d\n", RAX, code);                                       \
+    B_TEXT("\tsyscall\n");
+
+// Macro for outputting to stdout
+#define STDOUT(symbol)                                                         \
+    B_TEXT("\tmov 1, %s\n", RDI);                                              \
+    LEAQ(EXPAND(symbol), RSI);                                                 \
+    B_TEXT("\tmov %s, %s\n", EXPAND(symbol##_len), RDX);                       \
+    SYSCALL(1)
+
 typedef struct reg_t
 {
     char* name;
     bool locked;
 } reg_t;
 
-#define REG_COUNT 14
 reg_t g_registers[REG_COUNT] = {
     {"rax", false}, //
     {"rbx", false}, //
@@ -62,6 +81,11 @@ static size_t UNLOCK_COUNT = 0;
         return #reg                                                            \
     }
 
+/* \
+Assert that the unlock count is less than or equal to the lock count. If the
+unlock count is greater than lock count, there's a mismatch with how many
+registers have been allocated and this will probably cause a SEGFAULT.
+*/
 void register_assert()
 {
     assert(UNLOCK_COUNT <= LOCK_COUNT,
@@ -69,9 +93,14 @@ void register_assert()
            LOCK_COUNT, UNLOCK_COUNT);
 }
 
+/*
+ * Returns the next available register. Registers are prioritized in order
+ * in the `g_registers` array. If no register is available, return a NULL
+ * pointer.
+ */
 char* register_get()
 {
-    for (int i = 0; i < 14; i++)
+    for (int i = 0; i < REG_COUNT; i++)
     {
         reg_t* reg = &g_registers[i];
         if (reg->locked == false)
@@ -86,6 +115,9 @@ char* register_get()
     return NULL;
 }
 
+/*
+ * Release the most-recently retrieved register.
+ */
 char* register_release()
 {
     // Release the most-recently locked register (LIFO). Scan from the end
@@ -105,25 +137,7 @@ char* register_release()
     return NULL;
 }
 
-#define SYMBOL(symbol, type, text)                                             \
-    B_DATA("\t%s: .%s %s\n", #symbol, #type, EXPAND(text));                    \
-    B_DATA("\t%s_len = . - %s\n", #symbol, #symbol)
-#define SYMBOL2(symbol, text)                                                  \
-    B_DATA("\t" #symbol ": .asciz \"%s\"\n", text);                            \
-    B_DATA("\t" #symbol "_len = . - " #symbol "\n")
-
-// Macro for calling a system interrupt via code (use rax for syscall number)
-#define SYSCALL(code)                                                          \
-    B_TEXT("\tmov %s, %d\n", RAX, code);                                       \
-    B_TEXT("\tsyscall\n");
-
-// Macro for outputting to stdout
-#define STDOUT(symbol)                                                         \
-    B_TEXT("\tmov 1, %s\n", RDI);                                              \
-    LEAQ(EXPAND(symbol), RSI);                                                 \
-    B_TEXT("\tmov %s, %s\n", EXPAND(symbol##_len), RDX);                       \
-    SYSCALL(1)
-
+/* Emits a simple comment line. */
 void x86_comment(char* text)
 {
     B_TEXT("; %s\n", text);
@@ -248,6 +262,7 @@ void x86_assign(ast* node)
     EXIT(ASSIGN);
 }
 
+/* Currently only support root-level return (main program exit). */
 void x86_return(ast* node)
 {
     ENTER(RET);
@@ -353,22 +368,23 @@ void x86_statement(ast* node)
 void x86_body(ast* node)
 {
     assert(node->type == AST_BODY, "Wanted node type BODY, got %s", node->type);
-    log_info("Emitting x86_64 body...");
+    ENTER(BODY);
     for (size_t i = 0; i < node->data.body.count; i++)
     {
-        log_debug("Statement %d", i);
         ast* statement = node->data.body.statements[i];
         x86_statement(statement);
     }
-    log_info("Completed emitting x86_64 body");
+    EXIT(BODY);
 }
 
+/* The main entry point for emitting ASM code from the AST. */
 void target_x86(ast* node)
 {
     assert(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
 
-    // make all symbol references RIP-relative by default
+    // Make all symbol references RIP-relative by default
+    // https://www.nasm.us/doc/nasm08.html#section-8.2.1
     buffer_printf(g_global, "default rel\n");
 
     // Initialize sections
@@ -384,7 +400,6 @@ void target_x86(ast* node)
     // Code
     for (size_t i = 0; i < node->data.program.count; i++)
     {
-        log_debug("Body %d", i);
         ast* body = node->data.program.body[i];
         x86_body(body);
     }
