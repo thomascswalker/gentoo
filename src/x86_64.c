@@ -228,6 +228,23 @@ void x86_declvar(ast* node)
     EXIT(DECLVAR);
 }
 
+void x86_declfn(ast* node)
+{
+    ENTER(DECLFN);
+
+    char* name = node->data.declfn.identifier->data.identifier.name;
+    B_TEXT("global %s\n", name);
+    B_TEXT("%s:\n", name);
+
+    ast_block* block = &node->data.declfn.block->data.block;
+    for (size_t i = 0; i < block->count; i++)
+    {
+        x86_statement(block->statements[i]);
+    }
+
+    EXIT(DECLFN);
+}
+
 void x86_assign(ast* node)
 {
     ENTER(ASSIGN);
@@ -356,6 +373,9 @@ void x86_statement(ast* node)
     case AST_DECLVAR:
         x86_declvar(node);
         break;
+    case AST_DECLFN:
+        x86_declfn(node);
+        break;
     case AST_RETURN:
         x86_return(node);
         break;
@@ -391,11 +411,6 @@ void target_x86(ast* node)
     B_BSS("section .bss\n");
     B_DATA("section .data\n");
     B_TEXT("section .text\n");
-
-    // Entry point
-    const char* entry_point = "main";
-    B_TEXT("global %s\n", entry_point);
-    B_TEXT("%s:\n", entry_point);
 
     // Code
     for (size_t i = 0; i < node->data.program.count; i++)

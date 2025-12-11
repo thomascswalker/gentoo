@@ -25,12 +25,16 @@ char* get_node_type_string(ast_node_t type)
         return "PROGRAM";
     case AST_BODY:
         return "BODY";
+    case AST_BLOCK:
+        return "AST_BLOCK";
     case AST_IDENTIFIER:
         return "IDENTIFIER";
     case AST_CONSTANT:
         return "CONSTANT";
     case AST_DECLVAR:
         return "DECLVAR";
+    case AST_DECLFN:
+        return "DECLFN";
     case AST_ASSIGN:
         return "ASSIGN";
     case AST_BINOP:
@@ -43,7 +47,6 @@ char* get_node_type_string(ast_node_t type)
 }
 
 char* binop_to_string(ast_binop_t op)
-
 {
     switch (op)
     {
@@ -69,116 +72,103 @@ ast* ast_new(ast_node_t type)
     return node;
 }
 
-void ast_fmt(char* buffer, ast* node)
+// Implementation
+void ast_fmt_buf(ast* n, buffer_t* out)
 {
-    switch (node->type)
+    switch (n->type)
     {
     case AST_PROGRAM:
     {
-        size_t cap = 1024;
-        char* bodies = (char*)malloc(cap);
-        if (!bodies)
+        buffer_printf(out, "{\"type\": \"%s\", \"body\": [",
+                      get_node_type_string(n->type));
+        for (int i = 0; i < n->data.program.count; i++)
         {
-            return;
+            if (i > 0)
+                buffer_puts(out, ", ");
+            ast_fmt_buf(n->data.program.body[i], out);
         }
-        bodies[0] = '\0';
-
-        for (int i = 0; i < node->data.program.count; i++)
-        {
-            char* temp = (char*)malloc(1024);
-            if (!temp)
-            {
-                continue;
-            }
-            ast_fmt(temp, node->data.program.body[i]);
-            bodies = strjoin(bodies, &cap, temp, i > 0);
-            free(temp);
-        }
-
-        sprintf(buffer, "{\"type\": \"%s\", \"body\": [%s]}",
-                get_node_type_string(node->type), bodies);
-        free(bodies);
+        buffer_puts(out, "]}");
         break;
     }
     case AST_BODY:
+    case AST_BLOCK:
     {
-        size_t cap = 512;
-        char* stmts = (char*)malloc(cap);
-        if (!stmts)
+        buffer_printf(out, "{\"type\": \"%s\", \"statements\": [",
+                      get_node_type_string(n->type));
+        int count =
+            (n->type == AST_BODY) ? n->data.body.count : n->data.block.count;
+        ast** stmts = (n->type == AST_BODY) ? n->data.body.statements
+                                            : n->data.block.statements;
+        for (int i = 0; i < count; i++)
         {
-            return;
+            if (i > 0)
+                buffer_puts(out, ", ");
+            ast_fmt_buf(stmts[i], out);
         }
-        stmts[0] = '\0';
-
-        for (int i = 0; i < node->data.body.count; i++)
-        {
-            char* temp = (char*)malloc(512);
-            if (!temp)
-            {
-                continue;
-            }
-            ast_fmt(temp, node->data.body.statements[i]);
-            stmts = strjoin(stmts, &cap, temp, i > 0);
-            free(temp);
-        }
-
-        sprintf(buffer, "{\"type\": \"%s\", \"statements\": [%s]}",
-                get_node_type_string(node->type), stmts);
-        free(stmts);
+        buffer_puts(out, "]}");
         break;
     }
     case AST_IDENTIFIER:
-        sprintf(buffer, "{\"type\": \"%s\", \"name\": \"%s\"}",
-                get_node_type_string(node->type), node->data.identifier.name);
+        buffer_printf(out, "{\"type\": \"%s\", \"name\": \"%s\"}",
+                      get_node_type_string(n->type), n->data.identifier.name);
         break;
     case AST_CONSTANT:
-        sprintf(buffer, "{\"type\": \"%s\", \"value\": %d}",
-                get_node_type_string(node->type), node->data.constant.value);
+        buffer_printf(out, "{\"type\": \"%s\", \"value\": %d}",
+                      get_node_type_string(n->type), n->data.constant.value);
         break;
     case AST_DECLVAR:
-        char* ident_buffer = (char*)calloc(1, 512);
-        ast_fmt(ident_buffer, node->data.declvar.identifier);
-        sprintf(buffer, "{\"type\": \"%s\", \"ident\": %s, \"is_const\": %s}",
-                get_node_type_string(node->type), ident_buffer,
-                node->data.declvar.is_const ? "true" : "false");
-        free(ident_buffer);
+        buffer_printf(out, "{\"type\": \"%s\", \"ident\": ",
+                      get_node_type_string(n->type));
+        ast_fmt_buf(n->data.declvar.identifier, out);
+        buffer_printf(out, ", \"is_const\": %s}",
+                      n->data.declvar.is_const ? "true" : "false");
+        break;
+    case AST_DECLFN:
+        buffer_printf(out, "{\"type\": \"%s\", \"ident\": ",
+                      get_node_type_string(n->type));
+        ast_fmt_buf(n->data.declfn.identifier, out);
+        buffer_printf(out, ", \"block\": ");
+        ast_fmt_buf(n->data.declfn.block, out);
+        buffer_puts(out, "}");
         break;
     case AST_ASSIGN:
-    {
-        char* lhs_buffer = (char*)malloc(512);
-        char* rhs_buffer = (char*)malloc(512);
-        if (!lhs_buffer || !rhs_buffer)
-        {
-            return;
-        }
-        ast_fmt(lhs_buffer, node->data.assign.lhs);
-        ast_fmt(rhs_buffer, node->data.assign.rhs);
-        sprintf(buffer, "{\"type\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
-                get_node_type_string(node->type), lhs_buffer, rhs_buffer);
-        free(lhs_buffer);
-        free(rhs_buffer);
+        buffer_puts(out, "{\"type\": \"ASSIGN\", \"lhs\": ");
+        ast_fmt_buf(n->data.assign.lhs, out);
+        buffer_puts(out, ", \"rhs\": ");
+        ast_fmt_buf(n->data.assign.rhs, out);
+        buffer_puts(out, "}");
         break;
-    }
     case AST_BINOP:
-        char* lhs_buffer = (char*)malloc(512);
-        char* rhs_buffer = (char*)malloc(512);
-        ast_fmt(lhs_buffer, node->data.binop.lhs);
-        ast_fmt(rhs_buffer, node->data.binop.rhs);
-        sprintf(buffer,
-                "{\"type\": \"%s\", \"op\": \"%s\", \"lhs\": %s, \"rhs\": %s}",
-                get_node_type_string(node->type),
-                binop_to_string(node->data.binop.op), lhs_buffer, rhs_buffer);
-        free(lhs_buffer);
-        free(rhs_buffer);
+        buffer_printf(out, "{\"type\": \"BINOP\", \"op\": \"%s\", \"lhs\": ",
+                      binop_to_string(n->data.binop.op));
+        ast_fmt_buf(n->data.binop.lhs, out);
+        buffer_puts(out, ", \"rhs\": ");
+        ast_fmt_buf(n->data.binop.rhs, out);
+        buffer_puts(out, "}");
         break;
     case AST_RETURN:
-        char* ret_buffer = (char*)malloc(512);
-        ast_fmt(ret_buffer, node->data.ret.node);
-        sprintf(buffer, "{\"type\": \"%s\", \"expr\": %s}",
-                get_node_type_string(node->type), ret_buffer);
-        free(ret_buffer);
+        buffer_puts(out, "{\"type\": \"RETURN\", \"expr\": ");
+        ast_fmt_buf(n->data.ret.node, out);
+        buffer_puts(out, "}");
+        break;
+    default:
+        buffer_printf(out, "{\"type\": \"%s\"}", get_node_type_string(n->type));
         break;
     }
+}
+
+void ast_fmt(char* buffer, ast* node)
+{
+    // Helper that writes into a temporary buffer_t and copies result.
+    buffer_t* buf = buffer_new();
+
+    // Build into buf and copy to caller-provided buffer
+    ast_fmt_buf(node, buf);
+    // Ensure null-terminated and copy up to caller's buffer size (assume 4096)
+    size_t copy_len = buf->size < 4095 ? buf->size : 4095;
+    memcpy(buffer, buf->data, copy_len);
+    buffer[copy_len] = '\0';
+    buffer_free(buf);
 }
 
 char* ast_codegen(ast* node)
@@ -256,8 +246,23 @@ void ast_free(ast* node)
         free(node->data.body.statements);
         node->data.body.statements = NULL;
         break;
+    case AST_BLOCK:
+        if (node->data.block.statements)
+        {
+            for (int i = 0; i < node->data.block.count; i++)
+            {
+                ast_free(node->data.block.statements[i]);
+            }
+        }
+        free(node->data.block.statements);
+        node->data.block.statements = NULL;
+        break;
     case AST_DECLVAR:
         ast_free(node->data.declvar.identifier);
+        break;
+    case AST_DECLFN:
+        ast_free(node->data.declfn.identifier);
+        ast_free(node->data.declfn.block);
         break;
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
@@ -485,7 +490,7 @@ ast* parse_assignment()
     return expr;
 }
 
-ast* parse_new_assignment()
+ast* parse_declvar()
 {
     log_debug("Parsing new assignment...");
 
@@ -516,6 +521,40 @@ ast* parse_new_assignment()
     return expr;
 }
 
+ast* parse_declfn()
+{
+    log_debug("Parsing declfn...");
+    next(); // Skip `fn`
+
+    ast* expr = ast_new(AST_DECLFN);
+
+    // Parse the function mame
+    require(TOK_IDENTIFIER);
+    expr->data.declfn.identifier = parse_identifier();
+
+    // Parse arguments
+    require(TOK_L_PAREN);
+    next();
+    require(TOK_R_PAREN);
+    next();
+
+    // Parse return type
+    require(TOK_COLON);
+    next();
+
+    // Return type
+    require(TOK_IDENTIFIER);
+    next();
+
+    // Arrow
+    require(TOK_ARROW);
+    next();
+
+    expr->data.declfn.block = parse_block();
+
+    return expr;
+}
+
 /* return = "return" expr*/
 ast* parse_ret()
 {
@@ -529,6 +568,11 @@ ast* parse_ret()
 ast* parse_statement()
 {
     log_debug("Parsing statement...");
+
+    if (expect(TOK_DECLFN))
+    {
+        return parse_declfn();
+    }
 
     // Parse return statements.
     if (expect(TOK_RETURN))
@@ -546,7 +590,7 @@ ast* parse_statement()
     {
         require_n(TOK_IDENTIFIER, 1);
         require_n(TOK_ASSIGN, 2);
-        return parse_new_assignment();
+        return parse_declvar();
     }
 
     // Parse existing assignment if the next token is
@@ -562,6 +606,34 @@ ast* parse_statement()
 
     log_error("Invalid token %s", get_token_type_string(g_cur->type));
     exit(1);
+}
+
+ast* parse_block()
+{
+    log_debug("Parsing block...");
+
+    require(TOK_L_BRACKET);
+    next();
+
+    ast* expr = ast_new(AST_BLOCK);
+    struct ast_block* block = &expr->data.block;
+
+    // Assume a maximum of 32 statements.
+    block->statements = calloc(32, sizeof(ast*));
+
+    block->count = 0;
+    while (!expect(TOK_R_BRACKET))
+    {
+        block->statements[block->count] = parse_statement();
+        block->count++;
+        require(TOK_SEMICOLON);
+        next();
+    }
+
+    require(TOK_R_BRACKET);
+    next();
+
+    return expr;
 }
 
 ast* parse_body()
@@ -580,8 +652,6 @@ ast* parse_body()
     {
         body->statements[body->count] = parse_statement();
         body->count++;
-        require(TOK_SEMICOLON);
-        next();
     }
 
     return expr;
@@ -612,7 +682,7 @@ ast* parse(char* buffer)
     size_t count = tokenize(buffer, tokens);
     log_debug("Found %d tokens.", count);
 
-#ifdef DEBUG
+#ifdef _DEBUG
     for (int i = 0; i < count; i++)
     {
         print_token(&tokens[i]);
@@ -622,6 +692,10 @@ ast* parse(char* buffer)
     g_cur = &tokens[0];
 
     ast* program = parse_program();
+    char* ast_buffer = (char*)calloc(1, 4096);
+    ast_fmt(ast_buffer, program);
+    log_debug("%s", ast_buffer);
+    free(ast_buffer);
 
     for (int i = 0; i < count; i++)
     {
