@@ -9,5 +9,5 @@ fn main(): int =>
     let b = a - 16;
     let c = 10;
     let d = b * c;
-    return b;
+    return d;
 }
