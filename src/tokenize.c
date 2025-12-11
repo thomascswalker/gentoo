@@ -209,8 +209,29 @@ token_t* tokenize_keyword()
 token_t* tokenize_string()
 {
     token_t* token = new_token();
-    token->type = TOK_NUMBER;
+    token->start = g_pos;
+    // Skip the opening quote
     g_pos++;
+    int count = 0;
+    int start = g_pos;
+    while (g_buf[g_pos] != '\0' && g_buf[g_pos] != '"')
+    {
+        count++;
+        g_pos++;
+    }
+    alloc_token(token, count + 1);
+    if (count > 0)
+    {
+        memcpy(token->value, &g_buf[start], count);
+    }
+    token->value[count] = '\0';
+    // Skip closing quote if present
+    if (g_buf[g_pos] == '"')
+    {
+        g_pos++;
+    }
+    token->type = TOK_QUOTE;
+    token->end = g_pos;
     return token;
 }
 
@@ -297,6 +318,7 @@ token_t* tokenize_next()
     token->value[1] = 0;
     token->start = g_pos;
     g_pos++;
+    token->end = g_pos;
     return token;
 }
 
