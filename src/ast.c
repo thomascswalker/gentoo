@@ -17,6 +17,8 @@ static token_t* g_cur = NULL;
 static symbol_t g_symbols[1024];
 static buffer_t* ast_buffer;
 
+static scope_t SCOPE = GLOBAL;
+
 char* get_node_type_string(ast_node_t type)
 {
     switch (type)
@@ -444,6 +446,7 @@ ast* parse_expression()
     {
         return parse_identifier();
     }
+    // Otherwise assume the next token is a term.
     else
     {
         ast* node = parse_term();
@@ -487,6 +490,9 @@ ast* parse_assignment()
     // Assume the only valid variable type is integer.
     expr->data.assign.rhs = parse_expression();
 
+    require(TOK_SEMICOLON);
+    next();
+
     return expr;
 }
 
@@ -518,6 +524,9 @@ ast* parse_declvar()
     // Assume the only valid variable type is integer.
     expr->data.assign.rhs = parse_expression();
 
+    require(TOK_SEMICOLON);
+    next();
+
     return expr;
 }
 
@@ -531,6 +540,13 @@ ast* parse_declfn()
     // Parse the function mame
     require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
+
+    // char* fn_name = expr->data.declfn.identifier->data.identifier.name;
+    // if (strcmp(fn_name, "main") == 0)
+    // {
+    //     free(expr->data.declfn.identifier->data.identifier.name);
+    //     expr->data.declfn.identifier->data.identifier.name = "gentoo_main";
+    // }
 
     // Parse arguments
     require(TOK_L_PAREN);
@@ -561,6 +577,10 @@ ast* parse_ret()
     ast* expr = ast_new(AST_RETURN);
     next();
     expr->data.ret.node = parse_expression();
+
+    require(TOK_SEMICOLON);
+    next();
+
     return expr;
 }
 
@@ -626,8 +646,6 @@ ast* parse_block()
     {
         block->statements[block->count] = parse_statement();
         block->count++;
-        require(TOK_SEMICOLON);
-        next();
     }
 
     require(TOK_R_BRACKET);

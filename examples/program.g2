@@ -1,13 +1,14 @@
-fn test(): void =>
-{
-    return 5;
+fn test_func(): int => {
+    let local_var = 5;
+    return local_var;
 }
 
 fn main(): int =>
 {
-    let a = 3 * (7 - 5) * 12;
-    let b = a - 16;
+    let a = 5 * 2;
+    let b = a - 4;
     let c = 10;
-    let d = b * c;
+    let d = b * (c + 4);
     return d;
 }
+

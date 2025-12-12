@@ -48,12 +48,19 @@ typedef enum ast_binop_t
 
 char* binop_to_string(ast_binop_t op);
 
+typedef enum scope_t
+{
+    GLOBAL,
+    LOCAL
+} scope_t;
+
 /* Symbol structure */
 typedef struct symbol_t
 {
     char name[32];
     size_t value;
     size_t size;
+    scope_t scope;
 } symbol_t;
 
 /* AST Node definitions
@@ -76,9 +83,11 @@ typedef struct symbol_t
 AST_NODE(program, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
-AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
-AST_NODE(identifier, AST_PROP(char*, name));
+AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const)
+                      AST_PROP(scope_t, scope));
+AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block)
+                     AST_PROP(scope_t, scope));
+AST_NODE(identifier, AST_PROP(char*, name) AST_PROP(scope_t, scope));
 AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop,

@@ -5,6 +5,7 @@ typedef struct ast ast;
 
 void x86_comment(char* text);
 char* x86_expr(ast* node);
+void x86_sysexit(ast* node);
 void x86_return(ast* node);
 void x86_assign(ast* node);
 void x86_declvar(ast* node);
