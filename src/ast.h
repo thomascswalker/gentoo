@@ -5,6 +5,8 @@
 
 #include "tokenize.h"
 
+#define ERROR_SPAN 10
+
 /* Forward declarations */
 
 typedef struct ast ast;
@@ -29,6 +31,7 @@ typedef enum ast_node_t
     AST_IDENTIFIER,
     AST_BINOP,
     AST_CONSTANT,
+    AST_CALL,
 } ast_node_t;
 
 typedef enum ast_constant_t
@@ -46,22 +49,14 @@ typedef enum ast_binop_t
     BIN_EQ,
 } ast_binop_t;
 
+char* ast_to_string(ast_node_t type);
 char* binop_to_string(ast_binop_t op);
 
-typedef enum scope_t
+typedef enum ast_ident_t
 {
-    GLOBAL,
-    LOCAL
-} scope_t;
-
-/* Symbol structure */
-typedef struct symbol_t
-{
-    char name[32];
-    size_t value;
-    size_t size;
-    scope_t scope;
-} symbol_t;
+    IDENT_VAR,
+    IDENT_FN,
+} ast_ident_t;
 
 /* AST Node definitions
  *
@@ -70,7 +65,7 @@ typedef struct symbol_t
  * 1. Declare the new node using the macros below.
  * 2. Add the node type to `ast_fmt`.
  * 3. Add the node type to `ast_free`.
- * 4. Add the node type to `get_node_type_string`.
+ * 4. Add the node type to `ast_to_string`.
  */
 
 #define AST_PROP(type, name) type name;
@@ -83,12 +78,11 @@ typedef struct symbol_t
 AST_NODE(program, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
-AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const)
-                      AST_PROP(scope_t, scope));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block)
-                     AST_PROP(scope_t, scope));
-AST_NODE(identifier, AST_PROP(char*, name) AST_PROP(scope_t, scope));
+AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
+AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
+AST_NODE(identifier, AST_PROP(char*, name));
 AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
+AST_NODE(call, AST_PROP(ast*, identifier));
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop,
          AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
@@ -115,6 +109,7 @@ struct ast
         struct ast_declfn declfn;
         struct ast_identifier identifier;
         struct ast_constant constant;
+        struct ast_call call;
         struct ast_assign assign;
         struct ast_binop binop;
         struct ast_ret ret;
@@ -129,6 +124,7 @@ ast* ast_new(ast_node_t type);
 void ast_free(ast* node);
 void ast_fmt(char* buffer, ast* node);
 char* ast_codegen(ast* node);
+void log_context();
 
 /* Parsing functions for each AST Node type */
 
@@ -138,6 +134,7 @@ ast* parse_factor();
 ast* parse_term();
 ast* parse_expression();
 ast* parse_assignment();
+ast* parse_call();
 ast* parse_declvar();
 ast* parse_declfn();
 ast* parse_ret();

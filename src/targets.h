@@ -8,9 +8,21 @@ extern buffer_t* g_data;
 extern buffer_t* g_bss;
 extern buffer_t* g_text;
 
-#define B_DATA(...) buffer_printf(g_data, __VA_ARGS__)
-#define B_BSS(...) buffer_printf(g_bss, __VA_ARGS__)
-#define B_TEXT(...) buffer_printf(g_text, __VA_ARGS__)
+#define B_DATA(...)                                                            \
+    {                                                                          \
+        buffer_printf(g_data, __VA_ARGS__);                                    \
+        log_debug(__VA_ARGS__);                                                \
+    }
+#define B_BSS(...)                                                             \
+    {                                                                          \
+        buffer_printf(g_bss, __VA_ARGS__);                                     \
+        log_debug(__VA_ARGS__);                                                \
+    }
+#define B_TEXT(...)                                                            \
+    {                                                                          \
+        buffer_printf(g_text, __VA_ARGS__);                                    \
+        log_debug(__VA_ARGS__);                                                \
+    }
 
 typedef struct ast ast;
 typedef void (*ast_emitter_t)(ast*);

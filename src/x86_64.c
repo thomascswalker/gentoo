@@ -362,6 +362,11 @@ char* x86_expr(ast* node)
         // Move the value of the identifier into the register
         B_TEXT("\tmov %s, [%s]\n", reg, node->data.identifier.name);
         break;
+    case AST_CALL:
+        // Call the function
+        reg = RAX;
+        B_TEXT("\tcall %s\n", node->data.call.identifier->data.identifier.name);
+        break;
     default:
         break;
     }
