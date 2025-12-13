@@ -8,7 +8,7 @@ fn main(): int =>
     let a = 5 * 2;
     let b = a - 4;
     let c = 10;
-    let d = b * (c + 4);
+    let d = b * (c + 12);
     return d;
 }
 
