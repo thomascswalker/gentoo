@@ -30,25 +30,6 @@
 #define RBP "rbp" // Snapshot of stack pointer
 #define RSP "rsp" // Stack pointer
 
-#define SYMBOL(symbol, type, text)                                             \
-    B_DATA("\t%s: .%s %s\n", #symbol, #type, EXPAND(text));                    \
-    B_DATA("\t%s_len = . - %s\n", #symbol, #symbol)
-#define SYMBOL2(symbol, text)                                                  \
-    B_DATA("\t" #symbol ": .asciz \"%s\"\n", text);                            \
-    B_DATA("\t" #symbol "_len = . - " #symbol "\n")
-
-// Macro for calling a system interrupt via code (use rax for syscall number)
-#define SYSCALL(code)                                                          \
-    B_TEXT("\tmov %s, %d\n", RAX, code);                                       \
-    B_TEXT("\tsyscall\n");
-
-// Macro for outputting to stdout
-#define STDOUT(symbol)                                                         \
-    B_TEXT("\tmov 1, %s\n", RDI);                                              \
-    LEAQ(EXPAND(symbol), RSI);                                                 \
-    B_TEXT("\tmov %s, %s\n", EXPAND(symbol##_len), RDX);                       \
-    SYSCALL(1)
-
 typedef struct reg_t
 {
     char* name;
@@ -142,6 +123,12 @@ char* register_release()
 void x86_comment(char* text)
 {
     B_TEXT("; %s\n", text);
+}
+
+void x86_syscall(int code)
+{
+    buffer_printf(g_text, "\tmov %s, %d\n", RAX, code);
+    buffer_printf(g_text, "\tsyscall\n");
 }
 
 #define ENTER(name) log_debug("Entering " #name)
@@ -335,7 +322,7 @@ void x86_sysexit(ast* node)
     }
 
     // Exit, syscall 60 on Linux
-    SYSCALL(60);
+    x86_syscall(60);
     EXIT(SYSEXIT);
 }
 
@@ -382,7 +369,6 @@ void x86_return(ast* node)
                rhs->type);
     }
 
-    // Return, syscall 80 on Linux
     B_TEXT("\tret\n");
     EXIT(RET);
 }
