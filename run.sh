@@ -49,6 +49,9 @@ fi
 # Run the compiler with the chosen input file
 echo "Running Gentoo compiler..."
 "${COMPILER_BIN}" "${INPUT_FILE}"
+if [ ! $? -eq 0 ] ; then
+    exit
+fi
 
 echo "Assembling Gentoo output..."
 nasm -f elf64 ./build/${INPUT_NAME}.asm -o ./build/${INPUT_NAME}.o
@@ -56,5 +59,4 @@ gcc ./build/${INPUT_NAME}.o -o ./build/${INPUT_NAME} -z noexecstack
 
 echo "Executing program '${INPUT_NAME}':"
 ./build/program
-RETURN_CODE=$?
-echo ${RETURN_CODE}
+echo $?

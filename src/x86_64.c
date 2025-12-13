@@ -75,7 +75,7 @@ char* register_release()
             g_unlock_count++;
             register_assert();
             reg->locked = false;
-            buffer_printf(g_text, "\txor %s, %s\n", reg->name, reg->name);
+            // buffer_printf(g_text, "\txor %s, %s\n", reg->name, reg->name);
             return reg->name;
         }
     }
@@ -240,100 +240,72 @@ void x86_assign(ast* node)
     EXIT(ASSIGN);
 }
 
-/* Currently only support root-level return (main program exit). */
-void x86_sysexit(ast* node)
-{
-    ENTER(SYSEXIT);
-
-    // Ensure register 5 (rdi) is not locked. It's required for
-    // returning the exit code in Linux, where RDI is the register
-    // for the first argument of a function (in this case, syscall 60
-    // which is Linux's exit syscall).
-    assert(!g_registers[5].locked,
-           "%s cannot be locked at the point of return.", "RDI");
-
-    // Move value of RAX into RDI (assign the exit code)
-    ast* rhs = node->data.ret.node;
-    char* rhs_reg;
-
-    switch (rhs->type)
-    {
-    // Process the binary operation and then move its output register
-    // into RDI.
-    case AST_BINOP:
-        rhs_reg = x86_binop(rhs);
-        B_TEXT("\tmov %s, [%s]\n", RDI, rhs_reg);
-        register_release();
-        break;
-
-    // Don't need to occupy a register for this, just move the constant value
-    // into RDI.
-    case AST_CONSTANT:
-        B_TEXT("\tmov %s, %d\n", RDI, rhs->data.constant.value);
-        break;
-
-    // Don't need to occupy a register for this, just move the identifier's
-    // value into RDI.
-    case AST_IDENTIFIER:
-        B_TEXT("\tmov %s, [%s]\n", RDI, rhs->data.identifier.name);
-        break;
-    default:
-        assert(false,
-               "Invalid right-hand type for RETURN: %d. Wanted one of "
-               "[BINOP, CONSTANT, IDENTIFIER].",
-               rhs->type);
-    }
-
-    // Exit, syscall 60 on Linux
-    x86_syscall(X86_EXIT);
-    EXIT(SYSEXIT);
-}
-
 void x86_return(ast* node)
 {
     ENTER(RET);
 
-    // Ensure register 5 (rdi) is not locked. It's required for
-    // returning the exit code in Linux, where RDI is the register
-    // for the first argument of a function (in this case, syscall 60
-    // which is Linux's exit syscall).
-    assert(!g_registers[5].locked,
-           "%s cannot be locked at the point of return.", "RDI");
-
-    // Move value of RAX into RDI (assign the exit code)
+    if (g_is_main)
+    {
+        // Ensure register 5 (rdi) is not locked. It's required for
+        // returning the exit code in Linux, where RDI is the register
+        // for the first argument of a function (in this case, syscall 60
+        // which is Linux's exit syscall).
+        assert(!g_registers[5].locked,
+               "%s cannot be locked at the point of return.", "RDI");
+    }
     ast* rhs = node->data.ret.node;
     char* rhs_reg;
 
     switch (rhs->type)
     {
-    // Process the binary operation and then move its output register
-    // into RDI.
     case AST_BINOP:
-        rhs_reg = x86_binop(rhs);
-        B_TEXT("\tmov %s, [%s]\n", RAX, rhs_reg);
-        register_release();
-        break;
-
-    // Don't need to occupy a register for this, just move the constant value
-    // into RDI.
     case AST_CONSTANT:
-        B_TEXT("\tmov %s, %d\n", RAX, rhs->data.constant.value);
-        break;
-
-    // Don't need to occupy a register for this, just move the identifier's
-    // value into RDI.
     case AST_IDENTIFIER:
-        B_TEXT("\tmov %s, [%s]\n", RAX, rhs->data.identifier.name);
+    case AST_CALL:
+        rhs_reg = x86_expr(rhs);
         break;
     default:
         assert(false,
                "Invalid right-hand type for RETURN: %d. Wanted one of "
-               "[BINOP, CONSTANT, IDENTIFIER].",
+               "[BINOP, CONSTANT, IDENTIFIER, CALL].",
                rhs->type);
     }
 
-    B_TEXT("\tret\n");
+    // If this is NOT the main function, just do a normal return.
+    // This will return the value in RAX.
+    if (!g_is_main)
+    {
+        // Move the result into RAX
+        B_TEXT("\tmov rax, %s\n", rhs_reg);
+        if (rhs->type != AST_CALL)
+        {
+            register_release();
+        }
+        B_TEXT("\tret\n");
+    }
+    // Otherwise we need to exit the program. Move RAX into RDI,
+    // which is the first argument for the linux exit syscall.
+    else
+    {
+        B_TEXT("\tmov rdi, %s\n", rhs_reg);
+        if (rhs->type != AST_CALL)
+        {
+            register_release();
+        }
+        x86_syscall(X86_EXIT);
+    }
     EXIT(RET);
+}
+
+char* x86_call(ast* node)
+{
+    ENTER(CALL);
+    // The return value is always stored in RAX
+    char* reg = RAX;
+    // Call the function
+    B_TEXT("\tcall %s\n", node->data.call.identifier->data.identifier.name);
+    EXIT(CALL);
+    return reg;
 }
 
 char* x86_expr(ast* node)
@@ -362,6 +334,9 @@ char* x86_expr(ast* node)
         // Move the value of the identifier into the register
         B_TEXT("\tmov %s, [%s]\n", reg, node->data.identifier.name);
         break;
+    case AST_CALL:
+        reg = x86_call(node);
+        break;
     default:
         break;
     }
@@ -385,14 +360,7 @@ void x86_statement(ast* node)
         x86_declfn(node);
         break;
     case AST_RETURN:
-        if (g_is_main)
-        {
-            x86_sysexit(node);
-        }
-        else
-        {
-            x86_return(node);
-        }
+        x86_return(node);
         break;
     default:
         break;

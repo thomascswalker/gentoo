@@ -12,14 +12,11 @@
 #include <string.h>
 
 // Track the current token
+static char* g_raw = NULL;
 static token_t* g_cur = NULL;
-
-static symbol_t g_symbols[1024];
 static buffer_t* ast_buffer;
 
-static scope_t SCOPE = GLOBAL;
-
-char* get_node_type_string(ast_node_t type)
+char* ast_to_string(ast_node_t type)
 {
     switch (type)
     {
@@ -37,6 +34,8 @@ char* get_node_type_string(ast_node_t type)
         return "DECLVAR";
     case AST_DECLFN:
         return "DECLFN";
+    case AST_CALL:
+        return "CALL";
     case AST_ASSIGN:
         return "ASSIGN";
     case AST_BINOP:
@@ -82,7 +81,7 @@ void ast_fmt_buf(ast* n, buffer_t* out)
     case AST_PROGRAM:
     {
         buffer_printf(out, "{\"type\": \"%s\", \"body\": [",
-                      get_node_type_string(n->type));
+                      ast_to_string(n->type));
         for (int i = 0; i < n->data.program.count; i++)
         {
             if (i > 0)
@@ -96,7 +95,7 @@ void ast_fmt_buf(ast* n, buffer_t* out)
     case AST_BLOCK:
     {
         buffer_printf(out, "{\"type\": \"%s\", \"statements\": [",
-                      get_node_type_string(n->type));
+                      ast_to_string(n->type));
         int count =
             (n->type == AST_BODY) ? n->data.body.count : n->data.block.count;
         ast** stmts = (n->type == AST_BODY) ? n->data.body.statements
@@ -112,26 +111,31 @@ void ast_fmt_buf(ast* n, buffer_t* out)
     }
     case AST_IDENTIFIER:
         buffer_printf(out, "{\"type\": \"%s\", \"name\": \"%s\"}",
-                      get_node_type_string(n->type), n->data.identifier.name);
+                      ast_to_string(n->type), n->data.identifier.name);
         break;
     case AST_CONSTANT:
         buffer_printf(out, "{\"type\": \"%s\", \"value\": %d}",
-                      get_node_type_string(n->type), n->data.constant.value);
+                      ast_to_string(n->type), n->data.constant.value);
         break;
     case AST_DECLVAR:
-        buffer_printf(out, "{\"type\": \"%s\", \"ident\": ",
-                      get_node_type_string(n->type));
+        buffer_printf(out,
+                      "{\"type\": \"%s\", \"ident\": ", ast_to_string(n->type));
         ast_fmt_buf(n->data.declvar.identifier, out);
         buffer_printf(out, ", \"is_const\": %s}",
                       n->data.declvar.is_const ? "true" : "false");
         break;
     case AST_DECLFN:
-        buffer_printf(out, "{\"type\": \"%s\", \"ident\": ",
-                      get_node_type_string(n->type));
+        buffer_printf(out,
+                      "{\"type\": \"%s\", \"ident\": ", ast_to_string(n->type));
         ast_fmt_buf(n->data.declfn.identifier, out);
         buffer_printf(out, ", \"block\": ");
         ast_fmt_buf(n->data.declfn.block, out);
         buffer_puts(out, "}");
+        break;
+    case AST_CALL:
+        buffer_printf(out, "{\"type\": \"%s\", \"args\": [",
+                      ast_to_string(n->type));
+        buffer_puts(out, "]}");
         break;
     case AST_ASSIGN:
         buffer_puts(out, "{\"type\": \"ASSIGN\", \"lhs\": ");
@@ -154,7 +158,7 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         buffer_puts(out, "}");
         break;
     default:
-        buffer_printf(out, "{\"type\": \"%s\"}", get_node_type_string(n->type));
+        buffer_printf(out, "{\"type\": \"%s\"}", ast_to_string(n->type));
         break;
     }
 }
@@ -178,6 +182,7 @@ char* ast_codegen(ast* node)
     if (node->type != AST_PROGRAM)
     {
         log_error("Expected AST Program Node, got %d.", node->type);
+        log_context();
         exit(1);
     }
 
@@ -186,6 +191,7 @@ char* ast_codegen(ast* node)
     if (!emitter)
     {
         log_error("Emitter function is not valid.");
+        log_context();
         exit(1);
     }
     emitter(node);
@@ -218,7 +224,7 @@ void ast_free(ast* node)
         return;
     }
 
-    log_debug("Freeing %s", get_node_type_string(node->type));
+    log_debug("Freeing %s", ast_to_string(node->type));
 
     switch (node->type)
     {
@@ -269,6 +275,9 @@ void ast_free(ast* node)
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
         break;
+    case AST_CALL:
+        free(node->data.call.identifier->data.identifier.name);
+        break;
     case AST_ASSIGN:
         ast_free(node->data.assign.lhs);
         ast_free(node->data.assign.rhs);
@@ -297,19 +306,18 @@ bool expect_n(token_type_t type, size_t offset)
     return (g_cur + offset)->type == type;
 }
 
-void throw(const char* format, ...)
+void log_context()
 {
-    va_list args;
-    va_start(args, format);
-
-    char* buffer = (char*)malloc(1024);
-    vsprintf(buffer, format, args);
-    log_error("%s", format);
-    va_end(args);
-
-    free(buffer);
-
-    exit(1);
+    size_t start = 0;
+    if (g_cur->start >= ERROR_SPAN)
+    {
+        g_cur->start - ERROR_SPAN;
+    };
+    size_t len = ERROR_SPAN * 2;
+    char* error_buf = (char*)calloc(len, 1);
+    memcpy(error_buf, g_raw + start, len);
+    log_error("%s\n%*c^", error_buf, ERROR_SPAN + 10, ' '); // + len("[ERR] - ")
+    free(error_buf);
 }
 
 void require(token_type_t type)
@@ -319,6 +327,7 @@ void require(token_type_t type)
     {
         log_error("Expected token %s, got %s.", get_token_type_string(type),
                   get_token_type_string(g_cur->type));
+        log_context();
         exit(1);
     }
     log_debug("Found %s", get_token_type_string(g_cur->type));
@@ -333,6 +342,7 @@ void require_n(token_type_t type, size_t offset)
         log_error("Expected token %s at offset %d, got %s.",
                   get_token_type_string(type), offset,
                   get_token_type_string((g_cur + offset)->type));
+        log_context();
         exit(1);
     }
     log_debug("Found %s", get_token_type_string((g_cur + offset)->type));
@@ -399,7 +409,10 @@ ast* parse_factor()
         next();
         return expr;
     }
-    throw("Unexpected token in factor: %s", get_token_type_string(g_cur->type));
+    log_context();
+    log_error("Unexpected token in factor: %s",
+              get_token_type_string(g_cur->type));
+    exit(1);
     return NULL;
 }
 
@@ -445,6 +458,10 @@ ast* parse_expression()
     else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_SEMICOLON, 1))
     {
         return parse_identifier();
+    }
+    else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_L_PAREN, 1))
+    {
+        return parse_call();
     }
     // Otherwise assume the next token is a term.
     else
@@ -496,6 +513,29 @@ ast* parse_assignment()
     return expr;
 }
 
+ast* parse_call()
+{
+    log_info("Parsing call...");
+
+    ast* expr = ast_new(AST_CALL);
+
+    require(TOK_IDENTIFIER);
+    ast* ident = ast_new(AST_IDENTIFIER);
+    ident->data.identifier.name = strdup(g_cur->value);
+    expr->data.call.identifier = ident;
+    next();
+
+    require(TOK_L_PAREN);
+    next();
+
+    /* Parse arguments */
+
+    require(TOK_R_PAREN);
+    next();
+
+    return expr;
+}
+
 ast* parse_declvar()
 {
     log_debug("Parsing new assignment...");
@@ -540,13 +580,6 @@ ast* parse_declfn()
     // Parse the function mame
     require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
-
-    // char* fn_name = expr->data.declfn.identifier->data.identifier.name;
-    // if (strcmp(fn_name, "main") == 0)
-    // {
-    //     free(expr->data.declfn.identifier->data.identifier.name);
-    //     expr->data.declfn.identifier->data.identifier.name = "gentoo_main";
-    // }
 
     // Parse arguments
     require(TOK_L_PAREN);
@@ -695,6 +728,8 @@ ast* parse_program()
 
 ast* parse(char* buffer)
 {
+    g_raw = strdup(buffer);
+
     log_debug("Tokenizing input...");
     token_t* tokens = calloc(TOKEN_COUNT, sizeof(token_t));
     size_t count = tokenize(buffer, tokens);
@@ -720,6 +755,8 @@ ast* parse(char* buffer)
         free_token(&tokens[i]);
     }
     free(tokens);
+
+    free(g_raw);
 
     return program;
 }

@@ -33,7 +33,25 @@ Assembly output is in x86-64 (AT&T) format.
 ### Assignment
 
 ```rust
-let a = 3 * (7 - 5) * 12;
-let b = a - 16;
-return b;
+// Returns 17
+fn test_func(): int => {
+    let local_a = 5;
+    let local_b = 12;
+    return local_a + local_b;
+}
+
+// Returns 80
+fn test_func_2(): int => {
+    let local_c = 40;
+    return local_c * 2;
+}
+
+// Returns 97
+fn main(): int =>
+{
+    let a = test_func();
+    let b = test_func_2();
+    let c = a + b;
+    return c;
+}
 ```

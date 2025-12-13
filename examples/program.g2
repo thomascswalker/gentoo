@@ -1,14 +1,19 @@
 fn test_func(): int => {
-    let local_var = 5;
-    return local_var;
+    let local_a = 5;
+    let local_b = 12;
+    return local_a + local_b;
+}
+
+fn test_func_2(): int => {
+    let local_c = 40;
+    return local_c * 2;
 }
 
 fn main(): int =>
 {
-    let a = 5 * 2;
-    let b = a - 4;
-    let c = 10;
-    let d = b * (c + 12);
-    return d;
+    let a = test_func();
+    let b = test_func_2();
+    let c = a + b;
+    return c;
 }
 
