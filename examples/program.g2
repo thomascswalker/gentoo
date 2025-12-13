@@ -1,13 +1,12 @@
 fn test_func(): int => {
     let local_a = 5;
-    let local_b = 10;
-    let local_c = local_a + local_b;
-    return local_c;
+    let local_b = 12;
+    return local_a + local_b;
 }
 
 fn test_func_2(): int => {
-    let local_d = 234;
-    return local_d;
+    let local_c = 40;
+    return local_c * 2;
 }
 
 fn main(): int =>
