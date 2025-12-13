@@ -1,6 +1,15 @@
 #ifndef X86_64_H
 #define X86_64_H
 
+typedef enum x86_syscall_t
+{
+    X86_READ = 0,
+    X86_WRITE,
+    X86_OPEN,
+    X86_CLOSE,
+    X86_EXIT = 60
+} x86_syscall_t;
+
 typedef struct ast ast;
 
 void x86_comment(char* text);

@@ -2,39 +2,9 @@
 #include "assert.h"
 #include "ast.h"
 #include "log.h"
+#include "reg.h"
 #include "stdlib.h"
 #include "targets.h"
-
-#define STRING asciz
-#define EXPAND(x) #x
-#define NEW_LINE "\\n"
-#define REG_COUNT 14
-
-// General purpose registers
-#define RAX "rax"
-#define RBX "rbx"
-#define RCX "rcx"
-#define RDX "rdx"
-#define RSI "rsi"
-#define RDI "rdi"
-#define R8 "r8"
-#define R9 "r9"
-#define R10 "r10"
-#define R11 "r11"
-#define R12 "r12"
-#define R13 "r13"
-#define R14 "r14"
-#define R15 "r15"
-
-// Stack registers
-#define RBP "rbp" // Snapshot of stack pointer
-#define RSP "rsp" // Stack pointer
-
-typedef struct reg_t
-{
-    char* name;
-    bool locked;
-} reg_t;
 
 reg_t g_registers[REG_COUNT] = {
     {"rax", false}, //
@@ -52,16 +22,9 @@ reg_t g_registers[REG_COUNT] = {
     {"r14", false}, //
     {"r15", false}, //
 };
-
-static size_t LOCK_COUNT = 0;
-static size_t UNLOCK_COUNT = 0;
-static bool IS_MAIN = false;
-
-#define REG_NEXT(reg)                                                          \
-    if (!g_registers.#reg)                                                     \
-    {                                                                          \
-        return #reg                                                            \
-    }
+size_t g_lock_count = 0;
+size_t g_unlock_count = 0;
+bool g_is_main = false;
 
 /* \
 Assert that the unlock count is less than or equal to the lock count. If the
@@ -70,9 +33,9 @@ registers have been allocated and this will probably cause a SEGFAULT.
 */
 void register_assert()
 {
-    assert(UNLOCK_COUNT <= LOCK_COUNT,
+    assert(g_unlock_count <= g_lock_count,
            "Unlock can never be greater than lock!: Lock:%d > Unlock:%d",
-           LOCK_COUNT, UNLOCK_COUNT);
+           g_lock_count, g_unlock_count);
 }
 
 /*
@@ -87,7 +50,7 @@ char* register_get()
         reg_t* reg = &g_registers[i];
         if (reg->locked == false)
         {
-            LOCK_COUNT++;
+            g_lock_count++;
             register_assert();
             reg->locked = true;
 
@@ -109,7 +72,7 @@ char* register_release()
         reg_t* reg = &g_registers[i];
         if (reg->locked == true)
         {
-            UNLOCK_COUNT++;
+            g_unlock_count++;
             register_assert();
             reg->locked = false;
             buffer_printf(g_text, "\txor %s, %s\n", reg->name, reg->name);
@@ -224,7 +187,7 @@ void x86_declfn(ast* node)
 
     if (strcmp(name, "main") == 0)
     {
-        IS_MAIN = true;
+        g_is_main = true;
     }
 
     B_TEXT("global %s\n", name);
@@ -236,9 +199,9 @@ void x86_declfn(ast* node)
         x86_statement(block->statements[i]);
     }
 
-    if (IS_MAIN)
+    if (g_is_main)
     {
-        IS_MAIN = false;
+        g_is_main = false;
     }
     EXIT(DECLFN);
 }
@@ -322,7 +285,7 @@ void x86_sysexit(ast* node)
     }
 
     // Exit, syscall 60 on Linux
-    x86_syscall(60);
+    x86_syscall(X86_EXIT);
     EXIT(SYSEXIT);
 }
 
@@ -422,7 +385,7 @@ void x86_statement(ast* node)
         x86_declfn(node);
         break;
     case AST_RETURN:
-        if (IS_MAIN)
+        if (g_is_main)
         {
             x86_sysexit(node);
         }
