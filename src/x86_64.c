@@ -1,10 +1,13 @@
-#include "x86_64.h"
+#include <stddef.h>
+#include <string.h>
+
 #include "assert.h"
 #include "ast.h"
 #include "log.h"
 #include "reg.h"
 #include "stdlib.h"
 #include "targets.h"
+#include "x86_64.h"
 
 reg_t g_registers[REG_COUNT] = {
     {"rax", false}, //
@@ -24,9 +27,190 @@ reg_t g_registers[REG_COUNT] = {
 };
 size_t g_lock_count = 0;
 size_t g_unlock_count = 0;
-bool g_is_main = false;
+bool g_in_main = false;
+bool g_in_function = false;
+scope_t* g_scope = NULL;
+scope_t* g_global_scope = NULL;
+ptrdiff_t g_stack_offset = 0;
 
-/* \
+// Allocate a new scope inheriting the parent's bindings.
+scope_t* scope_create(scope_t* parent)
+{
+    scope_t* scope = (scope_t*)calloc(1, sizeof(scope_t));
+    scope->parent = parent;
+    scope->capacity = 8;
+    scope->symbols = (symbol_t*)calloc(scope->capacity, sizeof(symbol_t));
+    return scope;
+}
+
+void scope_destroy(scope_t* scope)
+{
+    if (!scope)
+    {
+        return;
+    }
+    free(scope->symbols);
+    free(scope);
+}
+
+void scope_push()
+{
+    assert(g_scope != NULL, "Cannot push scope with no parent.");
+    g_scope = scope_create(g_scope);
+}
+
+void scope_pop()
+{
+    assert(g_scope != NULL, "No scope to pop.");
+    scope_t* current = g_scope;
+    assert(current->parent != NULL, "Cannot pop the global scope.");
+    g_scope = current->parent;
+    scope_destroy(current);
+}
+
+symbol_t* scope_lookup_shallow(scope_t* scope, const char* name)
+{
+    if (!scope)
+    {
+        return NULL;
+    }
+    for (size_t i = 0; i < scope->count; i++)
+    {
+        if (strcmp(scope->symbols[i].name, name) == 0)
+        {
+            return &scope->symbols[i];
+        }
+    }
+    return NULL;
+}
+
+symbol_t* scope_lookup(scope_t* scope, const char* name)
+{
+    scope_t* current = scope;
+    while (current)
+    {
+        symbol_t* symbol = scope_lookup_shallow(current, name);
+        if (symbol)
+        {
+            return symbol;
+        }
+        current = current->parent;
+    }
+    return NULL;
+}
+
+symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_kind_t kind)
+{
+    assert(scope != NULL, "Scope cannot be NULL when adding a symbol.");
+    if (scope->count >= scope->capacity)
+    {
+        size_t new_capacity = scope->capacity ? scope->capacity * 2 : 8;
+        scope->symbols =
+            (symbol_t*)realloc(scope->symbols, new_capacity * sizeof(symbol_t));
+        memset(scope->symbols + scope->capacity, 0,
+               (new_capacity - scope->capacity) * sizeof(symbol_t));
+        scope->capacity = new_capacity;
+    }
+
+    symbol_t* symbol = &scope->symbols[scope->count++];
+    symbol->name = name;
+    symbol->kind = kind;
+    symbol->stack_offset = 0;
+    return symbol;
+}
+
+ptrdiff_t allocate_stack_slot()
+{
+    assert(g_in_function,
+           "Stack slots can only be allocated inside functions.");
+    g_stack_offset += 8;
+    B_TEXT("\tsub rsp, 8\n");
+    return -g_stack_offset;
+}
+
+symbol_t* symbol_define_global(const char* name)
+{
+    assert(g_global_scope != NULL, "Global scope is not initialized.");
+    symbol_t* existing = scope_lookup_shallow(g_global_scope, name);
+    assert(existing == NULL, "Global symbol %s already defined.", name);
+    return scope_add_symbol(g_global_scope, name, SYMBOL_GLOBAL);
+}
+
+symbol_t* symbol_define_local(const char* name)
+{
+    assert(g_scope != NULL, "Current scope is not set.");
+    assert(g_scope != g_global_scope,
+           "Local declarations require a function scope.");
+    symbol_t* existing = scope_lookup_shallow(g_scope, name);
+    assert(existing == NULL, "Symbol %s already defined in this scope.", name);
+
+    symbol_t* symbol = scope_add_symbol(g_scope, name, SYMBOL_LOCAL);
+    symbol->stack_offset = allocate_stack_slot();
+    return symbol;
+}
+
+symbol_t* symbol_resolve(const char* name)
+{
+    symbol_t* symbol = scope_lookup(g_scope, name);
+    assert(symbol != NULL, "Undefined symbol: %s", name);
+    return symbol;
+}
+
+// Pre-scan the top-level bodies so globals exist before functions reference
+// them.
+void collect_global_symbols(ast* node)
+{
+    if (!node)
+    {
+        return;
+    }
+
+    assert(node->type == AST_PROGRAM,
+           "Expected PROGRAM node when collecting globals, got %s",
+           ast_to_string(node->type));
+
+    ast_program* program = &node->data.program;
+    for (int i = 0; i < program->count; i++)
+    {
+        ast* body_node = program->body[i];
+        if (!body_node || body_node->type != AST_BODY)
+        {
+            continue;
+        }
+
+        ast_body* body = &body_node->data.body;
+        for (int j = 0; j < body->count; j++)
+        {
+            ast* statement = body->statements[j];
+            if (!statement || statement->type != AST_ASSIGN)
+            {
+                continue;
+            }
+
+            ast* lhs = statement->data.assign.lhs;
+            if (lhs && lhs->type == AST_DECLVAR)
+            {
+                char* name = lhs->data.declvar.identifier->data.identifier.name;
+                if (scope_lookup_shallow(g_global_scope, name) == NULL)
+                {
+                    scope_add_symbol(g_global_scope, name, SYMBOL_GLOBAL);
+                }
+            }
+        }
+    }
+}
+
+void x86_epilogue(bool emit_ret)
+{
+    B_TEXT("\tmov rsp, rbp\n");
+    B_TEXT("\tpop rbp\n");
+    if (emit_ret)
+    {
+        B_TEXT("\tret\n");
+    }
+}
+
+/*
 Assert that the unlock count is less than or equal to the lock count. If the
 unlock count is greater than lock count, there's a mismatch with how many
 registers have been allocated and this will probably cause a SEGFAULT.
@@ -179,30 +363,46 @@ void x86_declvar(ast* node)
     EXIT(DECLVAR);
 }
 
+static void x86_block(ast* node)
+{
+    assert(node->type == AST_BLOCK, "Expected BLOCK node, got %s",
+           ast_to_string(node->type));
+
+    // Each block introduces a fresh scope to keep locals isolated.
+    scope_push();
+    ast_block* block = &node->data.block;
+    for (int i = 0; i < block->count; i++)
+    {
+        x86_statement(block->statements[i]);
+    }
+    scope_pop();
+}
+
 void x86_declfn(ast* node)
 {
     ENTER(DECLFN);
 
     char* name = node->data.declfn.identifier->data.identifier.name;
 
-    if (strcmp(name, "main") == 0)
-    {
-        g_is_main = true;
-    }
+    bool prev_in_function = g_in_function;
+    ptrdiff_t prev_stack_offset = g_stack_offset;
+    bool prev_is_main = g_in_main;
+
+    g_in_function = true;
+    g_stack_offset = 0;
+    g_in_main = (strcmp(name, "main") == 0);
 
     B_TEXT("global %s\n", name);
     B_TEXT("%s:\n", name);
+    // Standard prologue so locals can be addressed relative to RBP.
+    B_TEXT("\tpush rbp\n");
+    B_TEXT("\tmov rbp, rsp\n");
 
-    ast_block* block = &node->data.declfn.block->data.block;
-    for (size_t i = 0; i < block->count; i++)
-    {
-        x86_statement(block->statements[i]);
-    }
+    x86_block(node->data.declfn.block);
 
-    if (g_is_main)
-    {
-        g_is_main = false;
-    }
+    g_in_function = prev_in_function;
+    g_stack_offset = prev_stack_offset;
+    g_in_main = prev_is_main;
     EXIT(DECLFN);
 }
 
@@ -217,25 +417,51 @@ void x86_assign(ast* node)
     // Assume the left hand side is an identifier
     ast* lhs = node->data.assign.lhs;
     char* name = NULL;
+    symbol_t* symbol = NULL;
 
     switch (lhs->type)
     {
     // If it's a new variable, declare it
     case AST_DECLVAR:
         name = lhs->data.declvar.identifier->data.identifier.name;
-        x86_declvar(lhs);
+        if (g_in_function)
+        {
+            // Locals consume stack slots inside the current function.
+            symbol = symbol_define_local(name);
+        }
+        else
+        {
+            symbol = scope_lookup_shallow(g_global_scope, name);
+            if (!symbol)
+            {
+                symbol = symbol_define_global(name);
+            }
+            x86_declvar(lhs);
+        }
         break;
     // Otherwise obtain the existing variable name
     case AST_IDENTIFIER:
         name = lhs->data.identifier.name;
+        symbol = symbol_resolve(name);
         break;
     }
 
-    // If it's a constant value, store the value in <rhs_reg> first
-    // Mov <rhs_reg> into [<name>]
-    B_TEXT("\tmov [%s], %s\n", name, rhs_reg);
+    assert(symbol != NULL, "Failed to resolve symbol for %s", name);
 
-    register_release();
+    if (symbol->kind == SYMBOL_GLOBAL)
+    {
+        B_TEXT("\tmov [%s], %s\n", name, rhs_reg);
+    }
+    else
+    {
+        // Stack locals are addressed relative to RBP.
+        B_TEXT("\tmov [rbp%+td], %s\n", symbol->stack_offset, rhs_reg);
+    }
+
+    if (rhs->type != AST_CALL)
+    {
+        register_release();
+    }
 
     EXIT(ASSIGN);
 }
@@ -244,7 +470,7 @@ void x86_return(ast* node)
 {
     ENTER(RET);
 
-    if (g_is_main)
+    if (g_in_main)
     {
         // Ensure register 5 (rdi) is not locked. It's required for
         // returning the exit code in Linux, where RDI is the register
@@ -273,7 +499,7 @@ void x86_return(ast* node)
 
     // If this is NOT the main function, just do a normal return.
     // This will return the value in RAX.
-    if (!g_is_main)
+    if (!g_in_main)
     {
         // Move the result into RAX
         B_TEXT("\tmov rax, %s\n", rhs_reg);
@@ -281,7 +507,7 @@ void x86_return(ast* node)
         {
             register_release();
         }
-        B_TEXT("\tret\n");
+        x86_epilogue(true);
     }
     // Otherwise we need to exit the program. Move RAX into RDI,
     // which is the first argument for the linux exit syscall.
@@ -292,6 +518,7 @@ void x86_return(ast* node)
         {
             register_release();
         }
+        x86_epilogue(false);
         x86_syscall(X86_EXIT);
     }
     EXIT(RET);
@@ -331,8 +558,18 @@ char* x86_expr(ast* node)
     case AST_IDENTIFIER:
         // Get a new register to store the identifier's value
         reg = register_get();
-        // Move the value of the identifier into the register
-        B_TEXT("\tmov %s, [%s]\n", reg, node->data.identifier.name);
+        {
+            symbol_t* symbol = symbol_resolve(node->data.identifier.name);
+            if (symbol->kind == SYMBOL_GLOBAL)
+            {
+                B_TEXT("\tmov %s, [%s]\n", reg, symbol->name);
+            }
+            else
+            {
+                // Load local values via their recorded stack offset.
+                B_TEXT("\tmov %s, [rbp%+td]\n", reg, symbol->stack_offset);
+            }
+        }
         break;
     case AST_CALL:
         reg = x86_call(node);
@@ -353,11 +590,11 @@ void x86_statement(ast* node)
     case AST_ASSIGN:
         x86_assign(node);
         break;
-    case AST_DECLVAR:
-        x86_declvar(node);
-        break;
     case AST_DECLFN:
         x86_declfn(node);
+        break;
+    case AST_BLOCK:
+        x86_block(node);
         break;
     case AST_RETURN:
         x86_return(node);
@@ -386,6 +623,15 @@ void target_x86(ast* node)
     assert(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
 
+    // Reset scope state for this emission run.
+    scope_destroy(g_global_scope);
+    g_global_scope = scope_create(NULL);
+    g_scope = g_global_scope;
+    g_in_function = false;
+    g_stack_offset = 0;
+
+    collect_global_symbols(node);
+
     // Make all symbol references RIP-relative by default
     // https://www.nasm.us/doc/nasm08.html#section-8.2.1
     buffer_printf(g_global, "default rel\n");
@@ -401,4 +647,8 @@ void target_x86(ast* node)
         ast* body = node->data.program.body[i];
         x86_body(body);
     }
+
+    scope_destroy(g_global_scope);
+    g_global_scope = NULL;
+    g_scope = NULL;
 }

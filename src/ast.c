@@ -581,19 +581,19 @@ ast* parse_declfn()
     require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
 
-    // Parse arguments
+    // // Parse arguments
     require(TOK_L_PAREN);
     next();
     require(TOK_R_PAREN);
     next();
 
-    // Parse return type
-    require(TOK_COLON);
-    next();
+    // // Parse return type
+    // require(TOK_COLON);
+    // next();
 
-    // Return type
-    require(TOK_IDENTIFIER);
-    next();
+    // // Return type
+    // require(TOK_IDENTIFIER);
+    // next();
 
     // Arrow
     require(TOK_ARROW);
