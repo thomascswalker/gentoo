@@ -9,6 +9,7 @@
 
 /* Forward declarations */
 
+typedef enum codegen_type_t codegen_type_t;
 typedef struct ast ast;
 
 /* AST enums */
@@ -123,7 +124,7 @@ struct ast
 ast* ast_new(ast_node_t type);
 void ast_free(ast* node);
 void ast_fmt(char* buffer, ast* node);
-char* ast_codegen(ast* node);
+char* ast_codegen(ast* node, codegen_type_t type);
 void log_context();
 
 /* Parsing functions for each AST Node type */

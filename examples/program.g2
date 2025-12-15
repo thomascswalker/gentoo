@@ -1,20 +1,15 @@
-let global_var = 15;
+const global_var_0 = 5;
 
-fn test_func() => {
-    let local_a = 5;
-    let local_b = 12;
-    return local_a + local_b;
-}
-
-fn test_func_2() => {
-    let local_c = 40 + global_var;
-    return local_c * 2;
+fn func_0() => 
+{
+    let a = 5;
+    return a;
 }
 
 fn main() =>
 {
-    let a = test_func();
-    let b = test_func_2();
-    let c = a + b;
-    return test_func_2();
+    let global_var = 32;
+    let a = func_0();
+    global_var = global_var + a;
+    return global_var;
 }

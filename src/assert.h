@@ -1,6 +1,6 @@
 #include "log.h"
 
-#define assert(cond, ...)                                                      \
+#define ASSERT(cond, ...)                                                      \
     if (!(cond))                                                               \
     {                                                                          \
         log_error(__VA_ARGS__);                                                \

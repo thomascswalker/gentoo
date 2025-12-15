@@ -22,7 +22,7 @@ void buffer_recalloc(buffer_t* buf, size_t new_capacity);
 void buffer_putc(buffer_t* buf, char c);
 void buffer_puts(buffer_t* buf, char* str);
 void buffer_printf(buffer_t* buf, char* format, ...);
-char* buffer_vprintf(char* format, va_list in_args);
-char* format(char* format, ...);
+void buffer_vprintf(buffer_t* buf, char* format, va_list in_args);
+char* formats(const char* format, ...);
 
 #endif

@@ -1,13 +1,34 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "assert.h"
+#include "ASSERT.h"
 #include "ast.h"
+#include "codegen.h"
 #include "log.h"
 #include "reg.h"
 #include "stdlib.h"
-#include "targets.h"
 #include "x86_64.h"
+
+codegen_t CODEGEN_X86_64 = {
+    .ops =
+        {
+            .program = x86_program,
+            .body = x86_body,
+            .statement = x86_statement,
+            .binop = x86_binop,
+            .declfn = x86_declfn,
+            .declvar = x86_declvar,
+            .assign = x86_assign,
+            .call = x86_call,
+            .expr = x86_expr,
+            .syscall = x86_syscall,
+            .comment = x86_comment,
+            .epilogue = x86_epilogue,
+        },
+    .type = X86_64,
+};
+
+#define INIT_GLOBALS "__init_globals"
 
 reg_t g_registers[REG_COUNT] = {
     {"rax", false}, //
@@ -55,15 +76,15 @@ void scope_destroy(scope_t* scope)
 
 void scope_push()
 {
-    assert(g_scope != NULL, "Cannot push scope with no parent.");
+    ASSERT(g_scope != NULL, "Cannot push scope with no parent.");
     g_scope = scope_create(g_scope);
 }
 
 void scope_pop()
 {
-    assert(g_scope != NULL, "No scope to pop.");
+    ASSERT(g_scope != NULL, "No scope to pop.");
     scope_t* current = g_scope;
-    assert(current->parent != NULL, "Cannot pop the global scope.");
+    ASSERT(current->parent != NULL, "Cannot pop the global scope.");
     g_scope = current->parent;
     scope_destroy(current);
 }
@@ -99,9 +120,10 @@ symbol_t* scope_lookup(scope_t* scope, const char* name)
     return NULL;
 }
 
-symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_kind_t kind)
+symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
 {
-    assert(scope != NULL, "Scope cannot be NULL when adding a symbol.");
+    ASSERT(scope != NULL, "Scope cannot be NULL when adding a symbol.");
+
     if (scope->count >= scope->capacity)
     {
         size_t new_capacity = scope->capacity ? scope->capacity * 2 : 8;
@@ -114,50 +136,50 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_kind_t kind)
 
     symbol_t* symbol = &scope->symbols[scope->count++];
     symbol->name = name;
-    symbol->kind = kind;
-    symbol->stack_offset = 0;
+    symbol->type = type;
+    symbol->offset = 0;
+
+    log_debug("New symbol: %s", symbol_to_string(symbol));
     return symbol;
 }
 
 ptrdiff_t allocate_stack_slot()
 {
-    assert(g_in_function,
+    ASSERT(g_in_function,
            "Stack slots can only be allocated inside functions.");
     g_stack_offset += 8;
-    B_TEXT("\tsub rsp, 8\n");
+    EMIT(SECTION_TEXT, "\tsub rsp, 8\n");
     return -g_stack_offset;
 }
 
 symbol_t* symbol_define_global(const char* name)
 {
-    assert(g_global_scope != NULL, "Global scope is not initialized.");
+    ASSERT(g_global_scope != NULL, "Global scope is not initialized.");
     symbol_t* existing = scope_lookup_shallow(g_global_scope, name);
-    assert(existing == NULL, "Global symbol %s already defined.", name);
+    ASSERT(existing == NULL, "Global symbol %s already defined.", name);
     return scope_add_symbol(g_global_scope, name, SYMBOL_GLOBAL);
 }
 
 symbol_t* symbol_define_local(const char* name)
 {
-    assert(g_scope != NULL, "Current scope is not set.");
-    assert(g_scope != g_global_scope,
+    ASSERT(g_scope != NULL, "Current scope is not set.");
+    ASSERT(g_scope != g_global_scope,
            "Local declarations require a function scope.");
     symbol_t* existing = scope_lookup_shallow(g_scope, name);
-    assert(existing == NULL, "Symbol %s already defined in this scope.", name);
+    ASSERT(existing == NULL, "Symbol %s already defined in this scope.", name);
 
     symbol_t* symbol = scope_add_symbol(g_scope, name, SYMBOL_LOCAL);
-    symbol->stack_offset = allocate_stack_slot();
+    symbol->offset = allocate_stack_slot();
     return symbol;
 }
 
 symbol_t* symbol_resolve(const char* name)
 {
     symbol_t* symbol = scope_lookup(g_scope, name);
-    assert(symbol != NULL, "Undefined symbol: %s", name);
+    ASSERT(symbol != NULL, "Undefined symbol: %s", name);
     return symbol;
 }
 
-// Pre-scan the top-level bodies so globals exist before functions reference
-// them.
 void collect_global_symbols(ast* node)
 {
     if (!node)
@@ -165,7 +187,7 @@ void collect_global_symbols(ast* node)
         return;
     }
 
-    assert(node->type == AST_PROGRAM,
+    ASSERT(node->type == AST_PROGRAM,
            "Expected PROGRAM node when collecting globals, got %s",
            ast_to_string(node->type));
 
@@ -202,11 +224,11 @@ void collect_global_symbols(ast* node)
 
 void x86_epilogue(bool emit_ret)
 {
-    B_TEXT("\tmov rsp, rbp\n");
-    B_TEXT("\tpop rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rsp, rbp\n");
+    EMIT(SECTION_TEXT, "\tpop rbp\n");
     if (emit_ret)
     {
-        B_TEXT("\tret\n");
+        EMIT(SECTION_TEXT, "\tret\n");
     }
 }
 
@@ -217,7 +239,7 @@ registers have been allocated and this will probably cause a SEGFAULT.
 */
 void register_assert()
 {
-    assert(g_unlock_count <= g_lock_count,
+    ASSERT(g_unlock_count <= g_lock_count,
            "Unlock can never be greater than lock!: Lock:%d > Unlock:%d",
            g_lock_count, g_unlock_count);
 }
@@ -259,7 +281,8 @@ char* register_release()
             g_unlock_count++;
             register_assert();
             reg->locked = false;
-            // buffer_printf(g_text, "\txor %s, %s\n", reg->name, reg->name);
+            // buffer_printf(g_codegen->text, "\txor %s, %s\n", reg->name,
+            // reg->name);
             return reg->name;
         }
     }
@@ -269,13 +292,13 @@ char* register_release()
 /* Emits a simple comment line. */
 void x86_comment(char* text)
 {
-    B_TEXT("; %s\n", text);
+    EMIT(SECTION_TEXT, "; %s\n", text);
 }
 
 void x86_syscall(int code)
 {
-    buffer_printf(g_text, "\tmov %s, %d\n", RAX, code);
-    buffer_printf(g_text, "\tsyscall\n");
+    EMIT(SECTION_TEXT, "\tmov %s, %d\n", RAX, code);
+    EMIT(SECTION_TEXT, "\tsyscall\n");
 }
 
 #define ENTER(name) log_debug("Entering " #name)
@@ -289,7 +312,7 @@ void x86_syscall(int code)
 void x86_mov(int value, char* reg)
 {
     log_info("Moving %d into %s", value, reg);
-    B_TEXT("\tmov %s, %d\n", reg, value);
+    EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, value);
 }
 
 char* x86_binop(ast* node)
@@ -309,8 +332,8 @@ char* x86_binop(ast* node)
     case BIN_ADD:
     {
         // Compute out_reg = lhs + rhs (preserve left-to-right order)
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\tadd %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\tadd %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -321,8 +344,8 @@ char* x86_binop(ast* node)
     case BIN_SUB:
     {
         // Compute out_reg = lhs - rhs (preserve left-to-right order)
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\tsub %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\tsub %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -333,8 +356,8 @@ char* x86_binop(ast* node)
     case BIN_MUL:
     {
         // Move lhs into the output register, then multiply by rhs
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\timul %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\timul %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -344,7 +367,7 @@ char* x86_binop(ast* node)
     }
     case BIN_DIV:
     case BIN_EQ:
-        assert(false, "BINOP %s not implemented yet.",
+        ASSERT(false, "BINOP %s not implemented yet.",
                binop_to_string(binop->op));
     default:
         break;
@@ -359,13 +382,13 @@ void x86_declvar(ast* node)
 {
     ENTER(DECLVAR);
     char* name = node->data.declvar.identifier->data.identifier.name;
-    B_DATA("\t%s: dq %d\n", name, 0);
+    EMIT(SECTION_DATA, "\t%s: dq %d\n", name, 0);
     EXIT(DECLVAR);
 }
 
 static void x86_block(ast* node)
 {
-    assert(node->type == AST_BLOCK, "Expected BLOCK node, got %s",
+    ASSERT(node->type == AST_BLOCK, "Expected BLOCK node, got %s",
            ast_to_string(node->type));
 
     // Each block introduces a fresh scope to keep locals isolated.
@@ -392,11 +415,12 @@ void x86_declfn(ast* node)
     g_stack_offset = 0;
     g_in_main = (strcmp(name, "main") == 0);
 
-    B_TEXT("global %s\n", name);
-    B_TEXT("%s:\n", name);
+    EMIT(SECTION_TEXT, "global %s\n", name);
+    EMIT(SECTION_TEXT, "%s:\n", name);
+
     // Standard prologue so locals can be addressed relative to RBP.
-    B_TEXT("\tpush rbp\n");
-    B_TEXT("\tmov rbp, rsp\n");
+    EMIT(SECTION_TEXT, "\tpush rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 
     x86_block(node->data.declfn.block);
 
@@ -446,16 +470,16 @@ void x86_assign(ast* node)
         break;
     }
 
-    assert(symbol != NULL, "Failed to resolve symbol for %s", name);
+    ASSERT(symbol != NULL, "Failed to resolve symbol for %s", name);
 
-    if (symbol->kind == SYMBOL_GLOBAL)
+    if (symbol->type == SYMBOL_GLOBAL)
     {
-        B_TEXT("\tmov [%s], %s\n", name, rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov [%s], %s\n", name, rhs_reg);
     }
     else
     {
         // Stack locals are addressed relative to RBP.
-        B_TEXT("\tmov [rbp%+td], %s\n", symbol->stack_offset, rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov [rbp%+td], %s\n", symbol->offset, rhs_reg);
     }
 
     if (rhs->type != AST_CALL)
@@ -476,7 +500,7 @@ void x86_return(ast* node)
         // returning the exit code in Linux, where RDI is the register
         // for the first argument of a function (in this case, syscall 60
         // which is Linux's exit syscall).
-        assert(!g_registers[5].locked,
+        ASSERT(!g_registers[5].locked,
                "%s cannot be locked at the point of return.", "RDI");
     }
     ast* rhs = node->data.ret.node;
@@ -491,7 +515,7 @@ void x86_return(ast* node)
         rhs_reg = x86_expr(rhs);
         break;
     default:
-        assert(false,
+        ASSERT(false,
                "Invalid right-hand type for RETURN: %d. Wanted one of "
                "[BINOP, CONSTANT, IDENTIFIER, CALL].",
                rhs->type);
@@ -502,7 +526,7 @@ void x86_return(ast* node)
     if (!g_in_main)
     {
         // Move the result into RAX
-        B_TEXT("\tmov rax, %s\n", rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
             register_release();
@@ -513,7 +537,7 @@ void x86_return(ast* node)
     // which is the first argument for the linux exit syscall.
     else
     {
-        B_TEXT("\tmov rdi, %s\n", rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
             register_release();
@@ -530,7 +554,8 @@ char* x86_call(ast* node)
     // The return value is always stored in RAX
     char* reg = RAX;
     // Call the function
-    B_TEXT("\tcall %s\n", node->data.call.identifier->data.identifier.name);
+    EMIT(SECTION_TEXT, "\tcall %s\n",
+         node->data.call.identifier->data.identifier.name);
     EXIT(CALL);
     return reg;
 }
@@ -553,21 +578,22 @@ char* x86_expr(ast* node)
         // Get a new register to store the constant
         reg = register_get();
         // Move the constant into this register
-        B_TEXT("\tmov %s, %d\n", reg, node->data.constant.value);
+        EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, node->data.constant.value);
         break;
     case AST_IDENTIFIER:
         // Get a new register to store the identifier's value
         reg = register_get();
         {
             symbol_t* symbol = symbol_resolve(node->data.identifier.name);
-            if (symbol->kind == SYMBOL_GLOBAL)
+            if (symbol->type == SYMBOL_GLOBAL)
             {
-                B_TEXT("\tmov %s, [%s]\n", reg, symbol->name);
+                EMIT(SECTION_TEXT, "\tmov %s, [%s]\n", reg, symbol->name);
             }
             else
             {
                 // Load local values via their recorded stack offset.
-                B_TEXT("\tmov %s, [rbp%+td]\n", reg, symbol->stack_offset);
+                EMIT(SECTION_TEXT, "\tmov %s, [rbp%+td]\n", reg,
+                     symbol->offset);
             }
         }
         break;
@@ -607,7 +633,7 @@ void x86_statement(ast* node)
 
 void x86_body(ast* node)
 {
-    assert(node->type == AST_BODY, "Wanted node type BODY, got %s", node->type);
+    ASSERT(node->type == AST_BODY, "Wanted node type BODY, got %s", node->type);
     ENTER(BODY);
     for (size_t i = 0; i < node->data.body.count; i++)
     {
@@ -618,9 +644,9 @@ void x86_body(ast* node)
 }
 
 /* The main entry point for emitting ASM code from the AST. */
-void target_x86(ast* node)
+void x86_program(ast* node)
 {
-    assert(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
+    ASSERT(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
 
     // Reset scope state for this emission run.
@@ -634,12 +660,12 @@ void target_x86(ast* node)
 
     // Make all symbol references RIP-relative by default
     // https://www.nasm.us/doc/nasm08.html#section-8.2.1
-    buffer_printf(g_global, "default rel\n");
+    EMIT(SECTION_GLOBAL, "default rel\n");
 
     // Initialize sections
-    B_BSS("section .bss\n");
-    B_DATA("section .data\n");
-    B_TEXT("section .text\n");
+    EMIT(SECTION_BSS, "section .bss\n");
+    EMIT(SECTION_DATA, "section .data\n");
+    EMIT(SECTION_TEXT, "section .text\n");
 
     // Code
     for (size_t i = 0; i < node->data.program.count; i++)

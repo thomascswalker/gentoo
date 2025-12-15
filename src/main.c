@@ -14,6 +14,7 @@
 
 #include "ast.h"
 #include "buffer.h"
+#include "codegen.h"
 #include "log.h"
 
 char* read_file(const char* filename)
@@ -76,7 +77,7 @@ void write_file(const char* filename, char* buffer)
 
 int main(int argc, char** argv)
 {
-    // Ensure exaclty one argument (the file's name)
+    // Ensure exactly one argument (the file's name)
     if (argc != 2)
     {
         fprintf(stderr, "Missing required input file: %d\n", 0);
@@ -108,7 +109,7 @@ int main(int argc, char** argv)
 
     // Generate assembly code
     log_info("Generating assembly...");
-    char* code = ast_codegen(root_node);
+    char* code = ast_codegen(root_node, X86_64);
     ast_free(root_node);
 
     log_debug("%s", code);
