@@ -141,7 +141,8 @@ void buffer_printf(buffer_t* buf, char* format, ...)
         va_start(args, format);
 
         // Format `args` into `buf` with the specified `format`.
-        size_t written = vsnprintf(buf->data + buf->size, remaining, format, args);
+        size_t written =
+            vsnprintf(buf->data + buf->size, remaining, format, args);
         va_end(args);
         if (remaining <= written)
         {
@@ -153,9 +154,8 @@ void buffer_printf(buffer_t* buf, char* format, ...)
     }
 }
 
-char* buffer_vprintf(char* format, va_list in_args)
+void buffer_vprintf(buffer_t* buf, char* format, va_list in_args)
 {
-    buffer_t* buf = buffer_new();
     va_list args;
     while (1)
     {
@@ -163,7 +163,8 @@ char* buffer_vprintf(char* format, va_list in_args)
         va_copy(args, in_args);
 
         // Format `args` into `buf` with the specified `format`.
-        size_t written = vsnprintf(buf->data + buf->size, remaining, format, args);
+        size_t written =
+            vsnprintf(buf->data + buf->size, remaining, format, args);
         va_end(args);
         if (remaining <= written)
         {
@@ -171,15 +172,35 @@ char* buffer_vprintf(char* format, va_list in_args)
             continue;
         }
         buf->size += written;
-        return buf->data;
+        return;
     }
 }
 
-char* format(char* format, ...)
+char* formats(const char* format, ...)
 {
     va_list args;
     va_start(args, format);
-    char* result = buffer_vprintf(format, args);
+    // Use vsnprintf to determine the required size
+    // We pass NULL for the buffer and 0 for the size to get the length
+    int size = vsnprintf(NULL, 0, format, args);
     va_end(args);
-    return result;
+
+    if (size < 0)
+    {
+        return NULL; // Error in formatting
+    }
+
+    // Allocate memory for the string (including the null terminator)
+    char* buffer = malloc(size + 1);
+    if (buffer == NULL)
+    {
+        return NULL; // Memory allocation failed
+    }
+
+    // Format the string into the allocated buffer
+    va_start(args, format);
+    vsnprintf(buffer, size + 1, format, args);
+    va_end(args);
+
+    return buffer;
 }

@@ -283,9 +283,14 @@ token_t* tokenize_semicolon()
 
 token_t* tokenize_next()
 {
-    while (is_whitespace(g_buf[g_pos]))
+    while (g_buf[g_pos] != '\0' && is_whitespace(g_buf[g_pos]))
     {
         g_pos++;
+    }
+
+    if (g_buf[g_pos] == '\0')
+    {
+        return NULL;
     }
 
     char c = g_buf[g_pos];

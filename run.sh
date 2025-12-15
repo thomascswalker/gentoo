@@ -48,7 +48,7 @@ fi
 
 # Run the compiler with the chosen input file
 echo "Running Gentoo compiler..."
-"${COMPILER_BIN}" "${INPUT_FILE}"
+"${COMPILER_BIN}" "${INPUT_FILE}" # x86_64
 if [ ! $? -eq 0 ] ; then
     exit
 fi

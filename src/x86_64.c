@@ -3,11 +3,30 @@
 
 #include "ASSERT.h"
 #include "ast.h"
+#include "codegen.h"
 #include "log.h"
 #include "reg.h"
 #include "stdlib.h"
-#include "targets.h"
 #include "x86_64.h"
+
+codegen_t CODEGEN_X86_64 = {
+    .ops =
+        {
+            .program = x86_program,
+            .body = x86_body,
+            .statement = x86_statement,
+            .binop = x86_binop,
+            .declfn = x86_declfn,
+            .declvar = x86_declvar,
+            .assign = x86_assign,
+            .call = x86_call,
+            .expr = x86_expr,
+            .syscall = x86_syscall,
+            .comment = x86_comment,
+            .epilogue = x86_epilogue,
+        },
+    .type = X86_64,
+};
 
 #define INIT_GLOBALS "__init_globals"
 
@@ -104,6 +123,7 @@ symbol_t* scope_lookup(scope_t* scope, const char* name)
 symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
 {
     ASSERT(scope != NULL, "Scope cannot be NULL when adding a symbol.");
+
     if (scope->count >= scope->capacity)
     {
         size_t new_capacity = scope->capacity ? scope->capacity * 2 : 8;
@@ -118,6 +138,8 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
     symbol->name = name;
     symbol->type = type;
     symbol->offset = 0;
+
+    log_debug("New symbol: %s", symbol_to_string(symbol));
     return symbol;
 }
 
@@ -126,7 +148,7 @@ ptrdiff_t allocate_stack_slot()
     ASSERT(g_in_function,
            "Stack slots can only be allocated inside functions.");
     g_stack_offset += 8;
-    B_TEXT("\tsub rsp, 8\n");
+    EMIT(SECTION_TEXT, "\tsub rsp, 8\n");
     return -g_stack_offset;
 }
 
@@ -158,8 +180,6 @@ symbol_t* symbol_resolve(const char* name)
     return symbol;
 }
 
-// Pre-scan the top-level bodies so globals exist before functions reference
-// them.
 void collect_global_symbols(ast* node)
 {
     if (!node)
@@ -204,11 +224,11 @@ void collect_global_symbols(ast* node)
 
 void x86_epilogue(bool emit_ret)
 {
-    B_TEXT("\tmov rsp, rbp\n");
-    B_TEXT("\tpop rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rsp, rbp\n");
+    EMIT(SECTION_TEXT, "\tpop rbp\n");
     if (emit_ret)
     {
-        B_TEXT("\tret\n");
+        EMIT(SECTION_TEXT, "\tret\n");
     }
 }
 
@@ -261,7 +281,8 @@ char* register_release()
             g_unlock_count++;
             register_assert();
             reg->locked = false;
-            // buffer_printf(g_text, "\txor %s, %s\n", reg->name, reg->name);
+            // buffer_printf(g_codegen->text, "\txor %s, %s\n", reg->name,
+            // reg->name);
             return reg->name;
         }
     }
@@ -271,13 +292,13 @@ char* register_release()
 /* Emits a simple comment line. */
 void x86_comment(char* text)
 {
-    B_TEXT("; %s\n", text);
+    EMIT(SECTION_TEXT, "; %s\n", text);
 }
 
 void x86_syscall(int code)
 {
-    buffer_printf(g_text, "\tmov %s, %d\n", RAX, code);
-    buffer_printf(g_text, "\tsyscall\n");
+    EMIT(SECTION_TEXT, "\tmov %s, %d\n", RAX, code);
+    EMIT(SECTION_TEXT, "\tsyscall\n");
 }
 
 #define ENTER(name) log_debug("Entering " #name)
@@ -291,7 +312,7 @@ void x86_syscall(int code)
 void x86_mov(int value, char* reg)
 {
     log_info("Moving %d into %s", value, reg);
-    B_TEXT("\tmov %s, %d\n", reg, value);
+    EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, value);
 }
 
 char* x86_binop(ast* node)
@@ -311,8 +332,8 @@ char* x86_binop(ast* node)
     case BIN_ADD:
     {
         // Compute out_reg = lhs + rhs (preserve left-to-right order)
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\tadd %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\tadd %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -323,8 +344,8 @@ char* x86_binop(ast* node)
     case BIN_SUB:
     {
         // Compute out_reg = lhs - rhs (preserve left-to-right order)
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\tsub %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\tsub %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -335,8 +356,8 @@ char* x86_binop(ast* node)
     case BIN_MUL:
     {
         // Move lhs into the output register, then multiply by rhs
-        B_TEXT("\tmov %s, %s\n", out_reg, lhs);
-        B_TEXT("\timul %s, %s\n", out_reg, rhs);
+        EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
+        EMIT(SECTION_TEXT, "\timul %s, %s\n", out_reg, rhs);
         // Release rhs
         register_release();
         // Release lhs
@@ -361,7 +382,7 @@ void x86_declvar(ast* node)
 {
     ENTER(DECLVAR);
     char* name = node->data.declvar.identifier->data.identifier.name;
-    B_DATA("\t%s: dq %d\n", name, 0);
+    EMIT(SECTION_DATA, "\t%s: dq %d\n", name, 0);
     EXIT(DECLVAR);
 }
 
@@ -394,17 +415,12 @@ void x86_declfn(ast* node)
     g_stack_offset = 0;
     g_in_main = (strcmp(name, "main") == 0);
 
-    B_TEXT("global %s\n", name);
-    B_TEXT("%s:\n", name);
-
-    if (strcmp(name, "main") == 0)
-    {
-        B_TEXT("\tcall %s\n", INIT_GLOBALS);
-    }
+    EMIT(SECTION_TEXT, "global %s\n", name);
+    EMIT(SECTION_TEXT, "%s:\n", name);
 
     // Standard prologue so locals can be addressed relative to RBP.
-    B_TEXT("\tpush rbp\n");
-    B_TEXT("\tmov rbp, rsp\n");
+    EMIT(SECTION_TEXT, "\tpush rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 
     x86_block(node->data.declfn.block);
 
@@ -458,12 +474,12 @@ void x86_assign(ast* node)
 
     if (symbol->type == SYMBOL_GLOBAL)
     {
-        B_TEXT("\tmov [%s], %s\n", name, rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov [%s], %s\n", name, rhs_reg);
     }
     else
     {
         // Stack locals are addressed relative to RBP.
-        B_TEXT("\tmov [rbp%+td], %s\n", symbol->offset, rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov [rbp%+td], %s\n", symbol->offset, rhs_reg);
     }
 
     if (rhs->type != AST_CALL)
@@ -510,7 +526,7 @@ void x86_return(ast* node)
     if (!g_in_main)
     {
         // Move the result into RAX
-        B_TEXT("\tmov rax, %s\n", rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
             register_release();
@@ -521,7 +537,7 @@ void x86_return(ast* node)
     // which is the first argument for the linux exit syscall.
     else
     {
-        B_TEXT("\tmov rdi, %s\n", rhs_reg);
+        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
             register_release();
@@ -538,7 +554,8 @@ char* x86_call(ast* node)
     // The return value is always stored in RAX
     char* reg = RAX;
     // Call the function
-    B_TEXT("\tcall %s\n", node->data.call.identifier->data.identifier.name);
+    EMIT(SECTION_TEXT, "\tcall %s\n",
+         node->data.call.identifier->data.identifier.name);
     EXIT(CALL);
     return reg;
 }
@@ -561,7 +578,7 @@ char* x86_expr(ast* node)
         // Get a new register to store the constant
         reg = register_get();
         // Move the constant into this register
-        B_TEXT("\tmov %s, %d\n", reg, node->data.constant.value);
+        EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, node->data.constant.value);
         break;
     case AST_IDENTIFIER:
         // Get a new register to store the identifier's value
@@ -570,12 +587,13 @@ char* x86_expr(ast* node)
             symbol_t* symbol = symbol_resolve(node->data.identifier.name);
             if (symbol->type == SYMBOL_GLOBAL)
             {
-                B_TEXT("\tmov %s, [%s]\n", reg, symbol->name);
+                EMIT(SECTION_TEXT, "\tmov %s, [%s]\n", reg, symbol->name);
             }
             else
             {
                 // Load local values via their recorded stack offset.
-                B_TEXT("\tmov %s, [rbp%+td]\n", reg, symbol->offset);
+                EMIT(SECTION_TEXT, "\tmov %s, [rbp%+td]\n", reg,
+                     symbol->offset);
             }
         }
         break;
@@ -626,7 +644,7 @@ void x86_body(ast* node)
 }
 
 /* The main entry point for emitting ASM code from the AST. */
-void target_x86(ast* node)
+void x86_program(ast* node)
 {
     ASSERT(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
@@ -642,16 +660,12 @@ void target_x86(ast* node)
 
     // Make all symbol references RIP-relative by default
     // https://www.nasm.us/doc/nasm08.html#section-8.2.1
-    buffer_printf(g_global, "default rel\n");
+    EMIT(SECTION_GLOBAL, "default rel\n");
 
     // Initialize sections
-    B_BSS("section .bss\n");
-    B_DATA("section .data\n");
-    B_TEXT("section .text\n");
-
-    // Define a function to initialize all global variables
-    B_TEXT("global %s\n", INIT_GLOBALS);
-    B_TEXT("%s:\n", INIT_GLOBALS);
+    EMIT(SECTION_BSS, "section .bss\n");
+    EMIT(SECTION_DATA, "section .data\n");
+    EMIT(SECTION_TEXT, "section .text\n");
 
     // Code
     for (size_t i = 0; i < node->data.program.count; i++)

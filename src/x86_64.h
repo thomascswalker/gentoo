@@ -18,12 +18,27 @@ typedef enum symbol_type_t
     SYMBOL_LOCAL,
 } symbol_type_t;
 
+static char* symbol_type_to_string(symbol_type_t type)
+{
+    if (type == SYMBOL_GLOBAL)
+    {
+        return "GLOBAL";
+    }
+    return "LOCAL";
+}
+
 typedef struct symbol_t
 {
     const char* name;
     symbol_type_t type;
     ptrdiff_t offset; // Stack offset
 } symbol_t;
+
+static char* symbol_to_string(symbol_t* symbol)
+{
+    return formats("'%s', %s, 0x%02x", symbol->name,
+                   symbol_type_to_string(symbol->type), symbol->offset);
+}
 
 typedef struct scope_t
 {
@@ -53,18 +68,20 @@ void collect_global_symbols(ast* node);
 
 /* Assembly */
 
-void x86_epilogue(bool emit_ret);
-void x86_comment(char* text);
-void x86_syscall(int code);
-char* x86_expr(ast* node);
-void x86_return(ast* node);
-char* x86_call(ast* node);
-void x86_assign(ast* node);
-void x86_declvar(ast* node);
-void x86_declfn(ast* node);
-char* x86_binop(ast* node);
-void x86_statement(ast* node);
+void x86_program(ast* node);
 void x86_body(ast* node);
-void target_x86(ast* node);
+void x86_statement(ast* node);
+char* x86_binop(ast* node);
+void x86_declfn(ast* node);
+void x86_declvar(ast* node);
+void x86_assign(ast* node);
+char* x86_call(ast* node);
+void x86_return(ast* node);
+char* x86_expr(ast* node);
+void x86_syscall(int code);
+void x86_comment(char* text);
+void x86_epilogue(bool emit_ret);
+
+extern codegen_t CODEGEN_X86_64;
 
 #endif

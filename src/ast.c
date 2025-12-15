@@ -1,9 +1,9 @@
 #include "ast.h"
 #include "asm.h"
 #include "buffer.h"
+#include "codegen.h"
 #include "log.h"
 #include "misc.h"
-#include "targets.h"
 #include "tokenize.h"
 
 #include <stdarg.h>
@@ -177,7 +177,7 @@ void ast_fmt(char* buffer, ast* node)
     buffer_free(buf);
 }
 
-char* ast_codegen(ast* node)
+char* ast_codegen(ast* node, codegen_type_t type)
 {
     if (node->type != AST_PROGRAM)
     {
@@ -187,33 +187,41 @@ char* ast_codegen(ast* node)
     }
 
     // Get the emitter for the specified architecture
-    ast_emitter_t emitter = get_ast_emitter(X86_64);
-    if (!emitter)
+    g_codegen = codegen_new(type);
+    if (g_codegen == NULL)
     {
-        log_error("Emitter function is not valid.");
+        codegen_free(g_codegen);
+        log_error("Codegen is not valid.");
         log_context();
         exit(1);
     }
-    emitter(node);
+    log_info("Generating %s assembly...",
+             codegen_type_to_string(g_codegen->type));
+
+    g_codegen->ops.program(node);
     log_info("Completed emission.");
 
-    // Copy the buffers into a primary buffer
     buffer_t* code_buffer = buffer_new();
-    buffer_puts(code_buffer, g_global->data);
-    buffer_puts(code_buffer, g_data->data);
-    buffer_puts(code_buffer, g_bss->data);
-    buffer_puts(code_buffer, g_text->data);
+    if (g_codegen->global && g_codegen->global->size > 0)
+    {
+        buffer_puts(code_buffer, g_codegen->global->data);
+    }
+    if (g_codegen->data && g_codegen->data->size > 0)
+    {
+        buffer_puts(code_buffer, g_codegen->data->data);
+    }
+    if (g_codegen->bss && g_codegen->bss->size > 0)
+    {
+        buffer_puts(code_buffer, g_codegen->bss->data);
+    }
+    if (g_codegen->text && g_codegen->text->size > 0)
+    {
+        buffer_puts(code_buffer, g_codegen->text->data);
+    }
 
-    // Free each sections buffer
-    buffer_free(g_global);
-    buffer_free(g_data);
-    buffer_free(g_bss);
-    buffer_free(g_text);
-
-    // Copy the primary buffer into a char array
     char* code = strdup(code_buffer->data);
     buffer_free(code_buffer);
-
+    codegen_free(g_codegen);
     return code;
 }
 
