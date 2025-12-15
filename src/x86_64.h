@@ -12,22 +12,19 @@ typedef enum x86_syscall_t
     X86_EXIT = 60
 } x86_syscall_t;
 
-// Distinguish between globals emitted in .data and locals that live on the
-// stack.
-typedef enum symbol_kind_t
+typedef enum symbol_type_t
 {
     SYMBOL_GLOBAL,
     SYMBOL_LOCAL,
-} symbol_kind_t;
+} symbol_type_t;
 
 typedef struct symbol_t
 {
     const char* name;
-    symbol_kind_t kind;
-    ptrdiff_t stack_offset;
+    symbol_type_t type;
+    ptrdiff_t offset; // Stack offset
 } symbol_t;
 
-// Simple chained symbol table for lexical scopes.
 typedef struct scope_t
 {
     symbol_t* symbols;
@@ -38,7 +35,8 @@ typedef struct scope_t
 
 typedef struct ast ast;
 
-// Allocate a new scope inheriting the parent's bindings.
+/* Scope */
+
 scope_t* scope_create(scope_t* parent);
 void scope_destroy(scope_t* scope);
 void scope_push();
@@ -46,12 +44,14 @@ void scope_pop();
 symbol_t* scope_lookup_shallow(scope_t* scope, const char* name);
 symbol_t* scope_lookup(scope_t* scope, const char* name);
 symbol_t* scope_add_symbol(scope_t* scope, const char* name,
-                           symbol_kind_t kind);
+                           symbol_type_t type);
 ptrdiff_t allocate_stack_slot();
 symbol_t* symbol_define_global(const char* name);
 symbol_t* symbol_define_local(const char* name);
 symbol_t* symbol_resolve(const char* name);
 void collect_global_symbols(ast* node);
+
+/* Assembly */
 
 void x86_epilogue(bool emit_ret);
 void x86_comment(char* text);
