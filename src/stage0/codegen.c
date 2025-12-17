@@ -43,12 +43,12 @@ codegen_t* codegen_new(codegen_type_t type)
     // architecture.
     switch (type)
     {
-    case X86_32:
     case X86_64:
     {
         template = &CODEGEN_X86_64;
         break;
     }
+    case X86_32:
     default:
         // If no architecture is specified or it's invalid, free
         // the target object and return null.

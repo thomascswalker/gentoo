@@ -18,6 +18,7 @@ typedef enum symbol_type_t
     SYMBOL_LOCAL,
 } symbol_type_t;
 
+// Returns a printable name for the provided symbol type.
 static char* symbol_type_to_string(symbol_type_t type)
 {
     if (type == SYMBOL_GLOBAL)
@@ -34,6 +35,7 @@ typedef struct symbol_t
     ptrdiff_t offset; // Stack offset
 } symbol_t;
 
+// Formats a symbol into a human-readable string for logging/debugging.
 static char* symbol_to_string(symbol_t* symbol)
 {
     return formats("'%s', %s, 0x%02x", symbol->name,
@@ -52,25 +54,39 @@ typedef struct ast ast;
 
 /* Scope */
 
+// Allocates a new scope that inherits the bindings of the parent scope.
 scope_t* scope_new(scope_t* parent);
+// Releases all memory owned by the provided scope.
 void scope_free(scope_t* scope);
+// Pushes a new child scope onto the scope stack.
 void scope_push();
+// Pops the current scope, restoring its parent.
 void scope_pop();
+// Searches only the specified scope for a symbol:name match.
 symbol_t* scope_lookup_shallow(scope_t* scope, const char* name);
+// Walks parent scopes until the requested symbol is located.
 symbol_t* scope_lookup(scope_t* scope, const char* name);
+// Adds a symbol into the specified scope.
 symbol_t* scope_add_symbol(scope_t* scope, const char* name,
                            symbol_type_t type);
+
+// Allocates space on the current stack frame and returns the new offset.
 ptrdiff_t allocate_stack_slot();
+// Declares a symbol in the global scope table.
 symbol_t* symbol_define_global(const char* name);
+// Declares a symbol that belongs to the current local scope.
 symbol_t* symbol_define_local(const char* name);
+// Resolves a symbol name and asserts it exists within reachable scopes.
 symbol_t* symbol_resolve(const char* name);
-void collect_global_symbols(ast* node);
+// Scans the AST for global definitions and records them for later codegen.
+void get_global_symbols(ast* node);
 
 /* Assembly */
 
 void x86_program(ast* node);
 void x86_body(ast* node);
 void x86_statement(ast* node);
+void x86_block(ast* node);
 char* x86_binop(ast* node);
 void x86_declfn(ast* node);
 void x86_declvar(ast* node);
