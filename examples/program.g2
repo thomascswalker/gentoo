@@ -1,6 +1,6 @@
 fn test_func() =>
 {
-    let var = 10;
+    let var = 15;
     return var;
 }
 
@@ -8,6 +8,7 @@ fn main() =>
 {
     let var = 5;
     var = test_func();
+    var = var * 3;
     print(var);
     return 0;
 }

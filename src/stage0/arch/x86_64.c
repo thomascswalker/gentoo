@@ -9,6 +9,7 @@
 #include "stdlib.h"
 #include "x86_64.h"
 
+#define QUOTE(...) #__VA_ARGS__
 #define BUILTIN_PRINT "print"
 #define ENTER(name) log_debug("Entering " #name)
 #define EXIT(name) log_debug("Exiting " #name)
@@ -231,49 +232,49 @@ void x86_print()
 {
     EMIT(SECTION_GLOBAL, "global _%s\n", BUILTIN_PRINT);
     EMIT(SECTION_TEXT, "_%s:\n", BUILTIN_PRINT);
-    EMIT(SECTION_TEXT, "\tpush rbp\n");
-    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
-    EMIT(SECTION_TEXT, "\tsub rsp, 48\n");
-    EMIT(SECTION_TEXT, "\tmov eax, edi\n");
-    EMIT(SECTION_TEXT, "\tmov BYTE [rbp-1], 0\n");
-    EMIT(SECTION_TEXT, "\tlea rsi, [rbp-1]\n");
-    EMIT(SECTION_TEXT, "\tcmp eax, 0\n");
-    EMIT(SECTION_TEXT, "\tjne .convert\n");
-    EMIT(SECTION_TEXT, "\tmov BYTE [rsi-1], '0'\n");
-    EMIT(SECTION_TEXT, "\tlea rsi, [rsi-1]\n");
-    EMIT(SECTION_TEXT, "\tmov edx, 1\n");
-    EMIT(SECTION_TEXT, "\tjmp .emit\n");
-    EMIT(SECTION_TEXT, ".convert:\n");
-    EMIT(SECTION_TEXT, "\txor ecx, ecx\n");
-    EMIT(SECTION_TEXT, "\tcmp eax, 0\n");
-    EMIT(SECTION_TEXT, "\tjge .abs_ready\n");
-    EMIT(SECTION_TEXT, "\tneg eax\n");
-    EMIT(SECTION_TEXT, "\tmov cl, 1\n");
-    EMIT(SECTION_TEXT, ".abs_ready:\n");
-    EMIT(SECTION_TEXT, "\tlea rsi, [rbp-1]\n");
-    EMIT(SECTION_TEXT, ".convert_loop:\n");
-    EMIT(SECTION_TEXT, "\txor edx, edx\n");
-    EMIT(SECTION_TEXT, "\tmov ebx, 10\n");
-    EMIT(SECTION_TEXT, "\tdiv ebx\n");
-    EMIT(SECTION_TEXT, "\tadd dl, '0'\n");
-    EMIT(SECTION_TEXT, "\tdec rsi\n");
-    EMIT(SECTION_TEXT, "\tmov BYTE [rsi], dl\n");
-    EMIT(SECTION_TEXT, "\ttest eax, eax\n");
-    EMIT(SECTION_TEXT, "\tjne .convert_loop\n");
-    EMIT(SECTION_TEXT, "\ttest cl, cl\n");
-    EMIT(SECTION_TEXT, "\tjz .emit\n");
-    EMIT(SECTION_TEXT, "\tdec rsi\n");
-    EMIT(SECTION_TEXT, "\tmov BYTE [rsi], '-'\n");
-    EMIT(SECTION_TEXT, ".emit:\n");
-    EMIT(SECTION_TEXT, "\tlea rdx, [rbp-1]\n");
-    EMIT(SECTION_TEXT, "\tsub rdx, rsi\n");
-    EMIT(SECTION_TEXT, "\tmov eax, 1\n");
-    EMIT(SECTION_TEXT, "\tmov edi, 1\n");
-    EMIT(SECTION_TEXT, "\tmov rsi, rsi\n");
-    EMIT(SECTION_TEXT, "\tsyscall\n");
-    EMIT(SECTION_TEXT, "\tadd rsp, 48\n");
-    EMIT(SECTION_TEXT, "\tpop rbp\n");
-    EMIT(SECTION_TEXT, "\tret\n");
+    EMIT(SECTION_TEXT, "\tpush rbp\n"
+                       "\tmov rbp, rsp\n"
+                       "\tsub rsp, 48\n"
+                       "\tmov eax, edi\n"
+                       "\tmov byte [rbp-1], 0\n"
+                       "\tlea rsi, [rbp-1]\n"
+                       "\tcmp eax, 0\n"
+                       "\tjne _" BUILTIN_PRINT "_convert\n"
+                       "\tmov byte [rsi-1], '0'\n"
+                       "\tlea rsi, [rsi-1]\n"
+                       "\tmov edx, 1\n"
+                       "\tjmp _" BUILTIN_PRINT "_emit\n"
+                       "\t_" BUILTIN_PRINT "_convert:\n"
+                       "\t\txor ecx, ecx\n"
+                       "\t\tcmp eax, 0\n"
+                       "\t\tjge _" BUILTIN_PRINT "_abs_ready\n"
+                       "\t\tneg eax\n"
+                       "\t\tmov cl, 1\n"
+                       "\t_" BUILTIN_PRINT "_abs_ready:\n"
+                       "\t\tlea rsi, [rbp-1]\n"
+                       "\t_" BUILTIN_PRINT "_convert_loop:\n"
+                       "\t\txor edx, edx\n"
+                       "\t\tmov ebx, 10\n"
+                       "\t\tdiv ebx\n"
+                       "\t\tadd dl, '0'\n"
+                       "\t\tdec rsi\n"
+                       "\t\tmov byte [rsi], dl\n"
+                       "\t\ttest eax, eax\n"
+                       "\t\tjne _" BUILTIN_PRINT "_convert_loop\n"
+                       "\t\ttest cl, cl\n"
+                       "\t\tjz _" BUILTIN_PRINT "_emit\n"
+                       "\t\tdec rsi\n"
+                       "\t\tmov byte [rsi], '-'\n"
+                       "\t_" BUILTIN_PRINT "_emit:\n"
+                       "\t\tlea rdx, [rbp-1]\n"
+                       "\t\tsub rdx, rsi\n"
+                       "\t\tmov eax, 1\n"
+                       "\t\tmov edi, 1\n"
+                       "\t\tmov rsi, rsi\n"
+                       "\t\tsyscall\n"
+                       "\t\tadd rsp, 48\n"
+                       "\t\tpop rbp\n"
+                       "\t\tret\n");
 }
 
 /* Emits a simple comment line. */
