@@ -180,6 +180,7 @@ char* formats(const char* format, ...)
 {
     va_list args;
     va_start(args, format);
+
     // Use vsnprintf to determine the required size
     // We pass NULL for the buffer and 0 for the size to get the length
     int size = vsnprintf(NULL, 0, format, args);
@@ -187,14 +188,14 @@ char* formats(const char* format, ...)
 
     if (size < 0)
     {
-        return NULL; // Error in formatting
+        return NULL;
     }
 
     // Allocate memory for the string (including the null terminator)
     char* buffer = malloc(size + 1);
     if (buffer == NULL)
     {
-        return NULL; // Memory allocation failed
+        return NULL;
     }
 
     // Format the string into the allocated buffer

@@ -28,8 +28,6 @@ codegen_t CODEGEN_X86_64 = {
     .type = X86_64,
 };
 
-#define INIT_GLOBALS "__init_globals"
-
 reg_t g_registers[REG_COUNT] = {
     {"rax", false}, //
     {"rbx", false}, //
@@ -55,7 +53,7 @@ scope_t* g_global_scope = NULL;
 ptrdiff_t g_stack_offset = 0;
 
 // Allocate a new scope inheriting the parent's bindings.
-scope_t* scope_create(scope_t* parent)
+scope_t* scope_new(scope_t* parent)
 {
     scope_t* scope = (scope_t*)calloc(1, sizeof(scope_t));
     scope->parent = parent;
@@ -64,7 +62,7 @@ scope_t* scope_create(scope_t* parent)
     return scope;
 }
 
-void scope_destroy(scope_t* scope)
+void scope_free(scope_t* scope)
 {
     if (!scope)
     {
@@ -77,7 +75,7 @@ void scope_destroy(scope_t* scope)
 void scope_push()
 {
     ASSERT(g_scope != NULL, "Cannot push scope with no parent.");
-    g_scope = scope_create(g_scope);
+    g_scope = scope_new(g_scope);
 }
 
 void scope_pop()
@@ -86,7 +84,7 @@ void scope_pop()
     scope_t* current = g_scope;
     ASSERT(current->parent != NULL, "Cannot pop the global scope.");
     g_scope = current->parent;
-    scope_destroy(current);
+    scope_free(current);
 }
 
 symbol_t* scope_lookup_shallow(scope_t* scope, const char* name)
@@ -139,7 +137,9 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
     symbol->type = type;
     symbol->offset = 0;
 
-    log_debug("New symbol: %s", symbol_to_string(symbol));
+    char* message = symbol_to_string(symbol);
+    log_debug("New symbol: %s", message);
+    free(message);
     return symbol;
 }
 
@@ -222,14 +222,20 @@ void collect_global_symbols(ast* node)
     }
 }
 
-void x86_epilogue(bool emit_ret)
+void x86_epilogue(bool returns)
 {
     EMIT(SECTION_TEXT, "\tmov rsp, rbp\n");
     EMIT(SECTION_TEXT, "\tpop rbp\n");
-    if (emit_ret)
+    if (returns)
     {
         EMIT(SECTION_TEXT, "\tret\n");
     }
+}
+
+void x86_prologue()
+{
+    EMIT(SECTION_TEXT, "\tpush rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
 /*
@@ -415,12 +421,10 @@ void x86_declfn(ast* node)
     g_stack_offset = 0;
     g_in_main = (strcmp(name, "main") == 0);
 
-    EMIT(SECTION_TEXT, "global %s\n", name);
+    EMIT(SECTION_GLOBAL, "global %s\n", name);
     EMIT(SECTION_TEXT, "%s:\n", name);
 
-    // Standard prologue so locals can be addressed relative to RBP.
-    EMIT(SECTION_TEXT, "\tpush rbp\n");
-    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
+    x86_prologue();
 
     x86_block(node->data.declfn.block);
 
@@ -648,10 +652,11 @@ void x86_program(ast* node)
 {
     ASSERT(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
+    ENTER(PROGRAM);
 
     // Reset scope state for this emission run.
-    scope_destroy(g_global_scope);
-    g_global_scope = scope_create(NULL);
+    scope_free(g_global_scope);
+    g_global_scope = scope_new(NULL);
     g_scope = g_global_scope;
     g_in_function = false;
     g_stack_offset = 0;
@@ -674,7 +679,8 @@ void x86_program(ast* node)
         x86_body(body);
     }
 
-    scope_destroy(g_global_scope);
+    scope_free(g_global_scope);
     g_global_scope = NULL;
     g_scope = NULL;
+    EXIT(PROGRAM);
 }

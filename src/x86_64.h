@@ -52,8 +52,8 @@ typedef struct ast ast;
 
 /* Scope */
 
-scope_t* scope_create(scope_t* parent);
-void scope_destroy(scope_t* scope);
+scope_t* scope_new(scope_t* parent);
+void scope_free(scope_t* scope);
 void scope_push();
 void scope_pop();
 symbol_t* scope_lookup_shallow(scope_t* scope, const char* name);
@@ -81,6 +81,7 @@ char* x86_expr(ast* node);
 void x86_syscall(int code);
 void x86_comment(char* text);
 void x86_epilogue(bool emit_ret);
+void x86_prologue();
 
 extern codegen_t CODEGEN_X86_64;
 
