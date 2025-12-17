@@ -97,5 +97,6 @@ set +e
 "${BINARY_OUTPUT}"
 PROGRAM_EXIT=$?
 set -e
+echo "" # New line
 echo "Program exited with code: ${PROGRAM_EXIT}"
 exit "${PROGRAM_EXIT}"

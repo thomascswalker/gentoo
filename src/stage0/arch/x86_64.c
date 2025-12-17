@@ -9,6 +9,10 @@
 #include "stdlib.h"
 #include "x86_64.h"
 
+#define BUILTIN_PRINT "print"
+#define ENTER(name) log_debug("Entering " #name)
+#define EXIT(name) log_debug("Exiting " #name)
+
 codegen_t CODEGEN_X86_64 = {
     .ops =
         {
@@ -223,8 +227,54 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-#define ENTER(name) log_debug("Entering " #name)
-#define EXIT(name) log_debug("Exiting " #name)
+void x86_print()
+{
+    EMIT(SECTION_GLOBAL, "global _%s\n", BUILTIN_PRINT);
+    EMIT(SECTION_TEXT, "_%s:\n", BUILTIN_PRINT);
+    EMIT(SECTION_TEXT, "\tpush rbp\n"
+                       "\tmov rbp, rsp\n"
+                       "\tsub rsp, 48\n"
+                       "\tmov eax, edi\n"
+                       "\tmov byte [rbp-1], 0\n"
+                       "\tlea rsi, [rbp-1]\n"
+                       "\tcmp eax, 0\n"
+                       "\tjne _" BUILTIN_PRINT "_convert\n"
+                       "\tmov byte [rsi-1], '0'\n"
+                       "\tlea rsi, [rsi-1]\n"
+                       "\tmov edx, 1\n"
+                       "\tjmp _" BUILTIN_PRINT "_emit\n"
+                       "\t_" BUILTIN_PRINT "_convert:\n"
+                       "\t\txor ecx, ecx\n"
+                       "\t\tcmp eax, 0\n"
+                       "\t\tjge _" BUILTIN_PRINT "_abs_ready\n"
+                       "\t\tneg eax\n"
+                       "\t\tmov cl, 1\n"
+                       "\t_" BUILTIN_PRINT "_abs_ready:\n"
+                       "\t\tlea rsi, [rbp-1]\n"
+                       "\t_" BUILTIN_PRINT "_convert_loop:\n"
+                       "\t\txor edx, edx\n"
+                       "\t\tmov ebx, 10\n"
+                       "\t\tdiv ebx\n"
+                       "\t\tadd dl, '0'\n"
+                       "\t\tdec rsi\n"
+                       "\t\tmov byte [rsi], dl\n"
+                       "\t\ttest eax, eax\n"
+                       "\t\tjne _" BUILTIN_PRINT "_convert_loop\n"
+                       "\t\ttest cl, cl\n"
+                       "\t\tjz _" BUILTIN_PRINT "_emit\n"
+                       "\t\tdec rsi\n"
+                       "\t\tmov byte [rsi], '-'\n"
+                       "\t_" BUILTIN_PRINT "_emit:\n"
+                       "\t\tlea rdx, [rbp-1]\n"
+                       "\t\tsub rdx, rsi\n"
+                       "\t\tmov eax, 1\n"
+                       "\t\tmov edi, 1\n"
+                       "\t\tmov rsi, rsi\n"
+                       "\t\tsyscall\n"
+                       "\t\tadd rsp, 48\n"
+                       "\t\tpop rbp\n"
+                       "\t\tret\n");
+}
 
 /* Emits a simple comment line. */
 void x86_comment(char* text)
@@ -471,11 +521,30 @@ void x86_return(ast* node)
 char* x86_call(ast* node)
 {
     ENTER(CALL);
-    // The return value is always stored in RAX
     char* reg = RAX;
-    // Call the function
-    EMIT(SECTION_TEXT, "\tcall %s\n",
-         node->data.call.identifier->data.identifier.name);
+    char* callee = node->data.call.identifier->data.identifier.name;
+    size_t arg_count = node->data.call.count;
+
+    // print(int value)
+    if (strcmp(callee, BUILTIN_PRINT) == 0)
+    {
+        ASSERT(arg_count == 1, "`print` expects exactly one argument.");
+        ast* arg = node->data.call.args[0];
+        ASSERT(arg->type == AST_CONSTANT || arg->type == AST_IDENTIFIER,
+               "`print` argument must be a constant or identifier.");
+
+        char* arg_reg = x86_expr(arg);
+        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", arg_reg);
+        if (arg->type != AST_CALL)
+        {
+            register_unlock();
+        }
+        EMIT(SECTION_TEXT, "\tcall _%s\n", BUILTIN_PRINT);
+        EXIT(CALL);
+        return reg;
+    }
+
+    EMIT(SECTION_TEXT, "\tcall %s\n", callee);
     EXIT(CALL);
     return reg;
 }
@@ -545,6 +614,9 @@ void x86_statement(ast* node)
     case AST_RETURN:
         x86_return(node);
         break;
+    case AST_CALL:
+        x86_call(node);
+        break;
     default:
         break;
     }
@@ -587,6 +659,8 @@ void x86_program(ast* node)
     EMIT(SECTION_BSS, "section .bss\n");
     EMIT(SECTION_DATA, "section .data\n");
     EMIT(SECTION_TEXT, "section .text\n");
+
+    x86_print();
 
     for (size_t i = 0; i < node->data.program.count; i++)
     {

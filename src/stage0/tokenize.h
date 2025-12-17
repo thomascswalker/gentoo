@@ -36,6 +36,7 @@ typedef enum token_type_t
     TOK_COLON = ':',
     TOK_SEMICOLON = ';',
     TOK_QUOTE = '"',
+    TOK_COMMA = ',',
     TOK_L_PAREN = '(',
     TOK_R_PAREN = ')',
     TOK_L_SQUARE = '[',

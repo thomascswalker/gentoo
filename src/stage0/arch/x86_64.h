@@ -99,6 +99,10 @@ void x86_comment(char* text);
 void x86_epilogue(bool emit_ret);
 void x86_prologue();
 
+/* Built-ins */
+
+void x86_print();
+
 extern codegen_t CODEGEN_X86_64;
 
 #endif
