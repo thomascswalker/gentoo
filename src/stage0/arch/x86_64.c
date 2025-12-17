@@ -1,10 +1,10 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "ASSERT.h"
 #include "ast.h"
 #include "codegen.h"
 #include "log.h"
+#include "macros.h"
 #include "reg.h"
 #include "stdlib.h"
 #include "x86_64.h"
@@ -28,31 +28,16 @@ codegen_t CODEGEN_X86_64 = {
     .type = X86_64,
 };
 
-reg_t g_registers[REG_COUNT] = {
-    {"rax", false}, //
-    {"rbx", false}, //
-    {"rcx", false}, //
-    {"rdx", false}, //
-    {"rsi", false}, //
-    {"rdi", false}, //
-    {"r8", false},  //
-    {"r9", false},  //
-    {"r10", false}, //
-    {"r11", false}, //
-    {"r12", false}, //
-    {"r13", false}, //
-    {"r14", false}, //
-    {"r15", false}, //
-};
-size_t g_lock_count = 0;
-size_t g_unlock_count = 0;
 bool g_in_main = false;
 bool g_in_function = false;
 scope_t* g_scope = NULL;
 scope_t* g_global_scope = NULL;
+
+/**
+ * @brief Records an offset to the stack base.
+ */
 ptrdiff_t g_stack_offset = 0;
 
-// Allocate a new scope inheriting the parent's bindings.
 scope_t* scope_new(scope_t* parent)
 {
     scope_t* scope = (scope_t*)calloc(1, sizeof(scope_t));
@@ -180,7 +165,7 @@ symbol_t* symbol_resolve(const char* name)
     return symbol;
 }
 
-void collect_global_symbols(ast* node)
+void get_global_symbols(ast* node)
 {
     if (!node)
     {
@@ -238,62 +223,8 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-/*
-Assert that the unlock count is less than or equal to the lock count. If the
-unlock count is greater than lock count, there's a mismatch with how many
-registers have been allocated and this will probably cause a SEGFAULT.
-*/
-void register_assert()
-{
-    ASSERT(g_unlock_count <= g_lock_count,
-           "Unlock can never be greater than lock!: Lock:%d > Unlock:%d",
-           g_lock_count, g_unlock_count);
-}
-
-/*
- * Returns the next available register. Registers are prioritized in order
- * in the `g_registers` array. If no register is available, return a NULL
- * pointer.
- */
-char* register_get()
-{
-    for (int i = 0; i < REG_COUNT; i++)
-    {
-        reg_t* reg = &g_registers[i];
-        if (reg->locked == false)
-        {
-            g_lock_count++;
-            register_assert();
-            reg->locked = true;
-
-            return reg->name;
-        }
-    }
-    return NULL;
-}
-
-/*
- * Release the most-recently retrieved register.
- */
-char* register_release()
-{
-    // Release the most-recently locked register (LIFO). Scan from the end
-    // so that we free the last locked register first.
-    for (int i = REG_COUNT - 1; i >= 0; i--)
-    {
-        reg_t* reg = &g_registers[i];
-        if (reg->locked == true)
-        {
-            g_unlock_count++;
-            register_assert();
-            reg->locked = false;
-            // buffer_printf(g_codegen->text, "\txor %s, %s\n", reg->name,
-            // reg->name);
-            return reg->name;
-        }
-    }
-    return NULL;
-}
+#define ENTER(name) log_debug("Entering " #name)
+#define EXIT(name) log_debug("Exiting " #name)
 
 /* Emits a simple comment line. */
 void x86_comment(char* text)
@@ -307,20 +238,6 @@ void x86_syscall(int code)
     EMIT(SECTION_TEXT, "\tsyscall\n");
 }
 
-#define ENTER(name) log_debug("Entering " #name)
-// x86_comment("Entering " #name);
-#define EXIT(name) log_debug("Exiting " #name)
-// x86_comment("Exiting " #name);
-
-/*
- *  `mov <value>, <reg>`
- */
-void x86_mov(int value, char* reg)
-{
-    log_info("Moving %d into %s", value, reg);
-    EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, value);
-}
-
 char* x86_binop(ast* node)
 {
     ENTER(BINOP);
@@ -328,7 +245,7 @@ char* x86_binop(ast* node)
     ast_binop* binop = &node->data.binop;
 
     // Reserve a register for the output
-    char* out_reg = register_get();
+    char* out_reg = register_lock();
     char* lhs = x86_expr(binop->lhs);
     char* rhs = x86_expr(binop->rhs);
 
@@ -341,9 +258,9 @@ char* x86_binop(ast* node)
         EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
         EMIT(SECTION_TEXT, "\tadd %s, %s\n", out_reg, rhs);
         // Release rhs
-        register_release();
+        register_unlock();
         // Release lhs
-        register_release();
+        register_unlock();
 
         break;
     }
@@ -353,9 +270,9 @@ char* x86_binop(ast* node)
         EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
         EMIT(SECTION_TEXT, "\tsub %s, %s\n", out_reg, rhs);
         // Release rhs
-        register_release();
+        register_unlock();
         // Release lhs
-        register_release();
+        register_unlock();
 
         break;
     }
@@ -365,9 +282,9 @@ char* x86_binop(ast* node)
         EMIT(SECTION_TEXT, "\tmov %s, %s\n", out_reg, lhs);
         EMIT(SECTION_TEXT, "\timul %s, %s\n", out_reg, rhs);
         // Release rhs
-        register_release();
+        register_unlock();
         // Release lhs
-        register_release();
+        register_unlock();
 
         break;
     }
@@ -392,7 +309,7 @@ void x86_declvar(ast* node)
     EXIT(DECLVAR);
 }
 
-static void x86_block(ast* node)
+void x86_block(ast* node)
 {
     ASSERT(node->type == AST_BLOCK, "Expected BLOCK node, got %s",
            ast_to_string(node->type));
@@ -442,7 +359,6 @@ void x86_assign(ast* node)
     ast* rhs = node->data.assign.rhs;
     char* rhs_reg = x86_expr(rhs);
 
-    // Assume the left hand side is an identifier
     ast* lhs = node->data.assign.lhs;
     char* name = NULL;
     symbol_t* symbol = NULL;
@@ -488,7 +404,7 @@ void x86_assign(ast* node)
 
     if (rhs->type != AST_CALL)
     {
-        register_release();
+        register_unlock();
     }
 
     EXIT(ASSIGN);
@@ -504,7 +420,7 @@ void x86_return(ast* node)
         // returning the exit code in Linux, where RDI is the register
         // for the first argument of a function (in this case, syscall 60
         // which is Linux's exit syscall).
-        ASSERT(!g_registers[5].locked,
+        ASSERT(!register_get("rdi")->locked,
                "%s cannot be locked at the point of return.", "RDI");
     }
     ast* rhs = node->data.ret.node;
@@ -533,7 +449,7 @@ void x86_return(ast* node)
         EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
-            register_release();
+            register_unlock();
         }
         x86_epilogue(true);
     }
@@ -544,7 +460,7 @@ void x86_return(ast* node)
         EMIT(SECTION_TEXT, "\tmov rdi, %s\n", rhs_reg);
         if (rhs->type != AST_CALL)
         {
-            register_release();
+            register_unlock();
         }
         x86_epilogue(false);
         x86_syscall(X86_EXIT);
@@ -580,13 +496,13 @@ char* x86_expr(ast* node)
         break;
     case AST_CONSTANT:
         // Get a new register to store the constant
-        reg = register_get();
+        reg = register_lock();
         // Move the constant into this register
         EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, node->data.constant.value);
         break;
     case AST_IDENTIFIER:
         // Get a new register to store the identifier's value
-        reg = register_get();
+        reg = register_lock();
         {
             symbol_t* symbol = symbol_resolve(node->data.identifier.name);
             if (symbol->type == SYMBOL_GLOBAL)
@@ -647,21 +563,21 @@ void x86_body(ast* node)
     EXIT(BODY);
 }
 
-/* The main entry point for emitting ASM code from the AST. */
 void x86_program(ast* node)
 {
     ASSERT(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",
            node->type);
     ENTER(PROGRAM);
 
-    // Reset scope state for this emission run.
+    // Initialize scope state
     scope_free(g_global_scope);
     g_global_scope = scope_new(NULL);
     g_scope = g_global_scope;
     g_in_function = false;
     g_stack_offset = 0;
 
-    collect_global_symbols(node);
+    // Collect all global symbols prior to emitting any code.
+    get_global_symbols(node);
 
     // Make all symbol references RIP-relative by default
     // https://www.nasm.us/doc/nasm08.html#section-8.2.1
@@ -672,7 +588,6 @@ void x86_program(ast* node)
     EMIT(SECTION_DATA, "section .data\n");
     EMIT(SECTION_TEXT, "section .text\n");
 
-    // Code
     for (size_t i = 0; i < node->data.program.count; i++)
     {
         ast* body = node->data.program.body[i];

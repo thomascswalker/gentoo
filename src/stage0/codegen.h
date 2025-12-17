@@ -75,10 +75,14 @@ static const char* codegen_type_to_string(codegen_type_t type)
     return "";
 }
 
+// Constructs the appropriate `codegen_t` object based on the specified `type`.
 codegen_t* codegen_new(codegen_type_t type);
+// Frees all buffers within the codegen object and then frees the object itself.
 void codegen_free(codegen_t* codegen);
+// Emits the formatted string to the corresponding ASM `section`.
 void codegen_emit(section_type_t section, char* fmt, ...);
 
+// Macro to simplify emitting ASM
 #define EMIT g_codegen->emit
 
 #endif
