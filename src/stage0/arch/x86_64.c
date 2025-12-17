@@ -9,7 +9,6 @@
 #include "stdlib.h"
 #include "x86_64.h"
 
-#define QUOTE(...) #__VA_ARGS__
 #define BUILTIN_PRINT "print"
 #define ENTER(name) log_debug("Entering " #name)
 #define EXIT(name) log_debug("Exiting " #name)
