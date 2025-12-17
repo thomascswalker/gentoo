@@ -26,7 +26,7 @@ This is the bootstrap stage. A very simple compiler is written in C and construc
 minimal viable compiler into an executable so that a compiler can be written in the 
 language itself.
 
-Assembly output is in x86-64 (AT&T) format.
+Assembly output is in x86-64 (Intel) format.
 
 ## Examples
 
@@ -34,20 +34,20 @@ Assembly output is in x86-64 (AT&T) format.
 
 ```rust
 // Returns 17
-fn test_func(): int => {
+fn test_func() => {
     let local_a = 5;
     let local_b = 12;
     return local_a + local_b;
 }
 
 // Returns 80
-fn test_func_2(): int => {
+fn test_func_2() => {
     let local_c = 40;
     return local_c * 2;
 }
 
 // Returns 97
-fn main(): int =>
+fn main() =>
 {
     let a = test_func();
     let b = test_func_2();
