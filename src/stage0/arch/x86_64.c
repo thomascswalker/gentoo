@@ -9,6 +9,10 @@
 #include "stdlib.h"
 #include "x86_64.h"
 
+#define BUILTIN_PRINT "print"
+#define ENTER(name) log_debug("Entering " #name)
+#define EXIT(name) log_debug("Exiting " #name)
+
 codegen_t CODEGEN_X86_64 = {
     .ops =
         {
@@ -223,8 +227,54 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-#define ENTER(name) log_debug("Entering " #name)
-#define EXIT(name) log_debug("Exiting " #name)
+void x86_print()
+{
+    EMIT(SECTION_GLOBAL, "global _%s\n", BUILTIN_PRINT);
+    EMIT(SECTION_TEXT, "_%s:\n", BUILTIN_PRINT);
+    EMIT(SECTION_TEXT, "\tpush rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
+    EMIT(SECTION_TEXT, "\tsub rsp, 48\n");
+    EMIT(SECTION_TEXT, "\tmov eax, edi\n");
+    EMIT(SECTION_TEXT, "\tmov BYTE [rbp-1], 0\n");
+    EMIT(SECTION_TEXT, "\tlea rsi, [rbp-1]\n");
+    EMIT(SECTION_TEXT, "\tcmp eax, 0\n");
+    EMIT(SECTION_TEXT, "\tjne .convert\n");
+    EMIT(SECTION_TEXT, "\tmov BYTE [rsi-1], '0'\n");
+    EMIT(SECTION_TEXT, "\tlea rsi, [rsi-1]\n");
+    EMIT(SECTION_TEXT, "\tmov edx, 1\n");
+    EMIT(SECTION_TEXT, "\tjmp .emit\n");
+    EMIT(SECTION_TEXT, ".convert:\n");
+    EMIT(SECTION_TEXT, "\txor ecx, ecx\n");
+    EMIT(SECTION_TEXT, "\tcmp eax, 0\n");
+    EMIT(SECTION_TEXT, "\tjge .abs_ready\n");
+    EMIT(SECTION_TEXT, "\tneg eax\n");
+    EMIT(SECTION_TEXT, "\tmov cl, 1\n");
+    EMIT(SECTION_TEXT, ".abs_ready:\n");
+    EMIT(SECTION_TEXT, "\tlea rsi, [rbp-1]\n");
+    EMIT(SECTION_TEXT, ".convert_loop:\n");
+    EMIT(SECTION_TEXT, "\txor edx, edx\n");
+    EMIT(SECTION_TEXT, "\tmov ebx, 10\n");
+    EMIT(SECTION_TEXT, "\tdiv ebx\n");
+    EMIT(SECTION_TEXT, "\tadd dl, '0'\n");
+    EMIT(SECTION_TEXT, "\tdec rsi\n");
+    EMIT(SECTION_TEXT, "\tmov BYTE [rsi], dl\n");
+    EMIT(SECTION_TEXT, "\ttest eax, eax\n");
+    EMIT(SECTION_TEXT, "\tjne .convert_loop\n");
+    EMIT(SECTION_TEXT, "\ttest cl, cl\n");
+    EMIT(SECTION_TEXT, "\tjz .emit\n");
+    EMIT(SECTION_TEXT, "\tdec rsi\n");
+    EMIT(SECTION_TEXT, "\tmov BYTE [rsi], '-'\n");
+    EMIT(SECTION_TEXT, ".emit:\n");
+    EMIT(SECTION_TEXT, "\tlea rdx, [rbp-1]\n");
+    EMIT(SECTION_TEXT, "\tsub rdx, rsi\n");
+    EMIT(SECTION_TEXT, "\tmov eax, 1\n");
+    EMIT(SECTION_TEXT, "\tmov edi, 1\n");
+    EMIT(SECTION_TEXT, "\tmov rsi, rsi\n");
+    EMIT(SECTION_TEXT, "\tsyscall\n");
+    EMIT(SECTION_TEXT, "\tadd rsp, 48\n");
+    EMIT(SECTION_TEXT, "\tpop rbp\n");
+    EMIT(SECTION_TEXT, "\tret\n");
+}
 
 /* Emits a simple comment line. */
 void x86_comment(char* text)
@@ -471,11 +521,30 @@ void x86_return(ast* node)
 char* x86_call(ast* node)
 {
     ENTER(CALL);
-    // The return value is always stored in RAX
     char* reg = RAX;
-    // Call the function
-    EMIT(SECTION_TEXT, "\tcall %s\n",
-         node->data.call.identifier->data.identifier.name);
+    char* callee = node->data.call.identifier->data.identifier.name;
+    size_t arg_count = node->data.call.count;
+
+    // print(int value)
+    if (strcmp(callee, BUILTIN_PRINT) == 0)
+    {
+        ASSERT(arg_count == 1, "`print` expects exactly one argument.");
+        ast* arg = node->data.call.args[0];
+        ASSERT(arg->type == AST_CONSTANT || arg->type == AST_IDENTIFIER,
+               "`print` argument must be a constant or identifier.");
+
+        char* arg_reg = x86_expr(arg);
+        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", arg_reg);
+        if (arg->type != AST_CALL)
+        {
+            register_unlock();
+        }
+        EMIT(SECTION_TEXT, "\tcall _%s\n", BUILTIN_PRINT);
+        EXIT(CALL);
+        return reg;
+    }
+
+    EMIT(SECTION_TEXT, "\tcall %s\n", callee);
     EXIT(CALL);
     return reg;
 }
@@ -545,6 +614,9 @@ void x86_statement(ast* node)
     case AST_RETURN:
         x86_return(node);
         break;
+    case AST_CALL:
+        x86_call(node);
+        break;
     default:
         break;
     }
@@ -587,6 +659,8 @@ void x86_program(ast* node)
     EMIT(SECTION_BSS, "section .bss\n");
     EMIT(SECTION_DATA, "section .data\n");
     EMIT(SECTION_TEXT, "section .text\n");
+
+    x86_print();
 
     for (size_t i = 0; i < node->data.program.count; i++)
     {

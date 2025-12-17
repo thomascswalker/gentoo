@@ -1,15 +1,13 @@
-const global_var_0 = 5;
-
-fn func_0() => 
+fn test_func() =>
 {
-    let a = 5;
-    return a;
+    let var = 10;
+    return var;
 }
 
 fn main() =>
 {
-    let global_var = 58;
-    let a = func_0();
-    global_var = global_var + a;
-    return global_var;
+    let var = 5;
+    var = test_func();
+    print(var);
+    return 0;
 }

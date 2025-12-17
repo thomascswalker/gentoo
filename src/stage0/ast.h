@@ -83,7 +83,8 @@ AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
 AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
-AST_NODE(call, AST_PROP(ast*, identifier));
+AST_NODE(call, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
+                   AST_PROP(size_t, count));
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop,
          AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));

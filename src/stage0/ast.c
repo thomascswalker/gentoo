@@ -14,6 +14,7 @@
 // Track the current token
 static char* g_raw = NULL;
 static token_t* g_cur = NULL;
+static token_t* g_error_token = NULL;
 static buffer_t* ast_buffer;
 
 char* ast_to_string(ast_node_t type)
@@ -133,10 +134,21 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         buffer_puts(out, "}");
         break;
     case AST_CALL:
-        buffer_printf(out, "{\"type\": \"%s\", \"args\": [",
-                      ast_to_string(n->type));
+    {
+        buffer_printf(out, "{\"type\": \"%s\", \"ident\": \"%s\", \"args\": [",
+                      ast_to_string(n->type),
+                      n->data.call.identifier->data.identifier.name);
+        for (size_t i = 0; i < n->data.call.count; i++)
+        {
+            if (i > 0)
+            {
+                buffer_puts(out, ", ");
+            }
+            ast_fmt_buf(n->data.call.args[i], out);
+        }
         buffer_puts(out, "]}");
         break;
+    }
     case AST_ASSIGN:
         buffer_puts(out, "{\"type\": \"ASSIGN\", \"lhs\": ");
         ast_fmt_buf(n->data.assign.lhs, out);
@@ -284,7 +296,17 @@ void ast_free(ast* node)
         free(node->data.identifier.name);
         break;
     case AST_CALL:
-        free(node->data.call.identifier->data.identifier.name);
+        if (node->data.call.args)
+        {
+            for (size_t i = 0; i < node->data.call.count; i++)
+            {
+                ast_free(node->data.call.args[i]);
+            }
+            free(node->data.call.args);
+            node->data.call.args = NULL;
+        }
+        ast_free(node->data.call.identifier);
+        node->data.call.identifier = NULL;
         break;
     case AST_ASSIGN:
         ast_free(node->data.assign.lhs);
@@ -316,16 +338,45 @@ bool expect_n(token_type_t type, size_t offset)
 
 void log_context()
 {
-    size_t start = 0;
-    if (g_cur->start >= ERROR_SPAN)
+    token_t* token = g_error_token ? g_error_token : g_cur;
+    if (!token || !g_raw)
     {
-        g_cur->start - ERROR_SPAN;
-    };
-    size_t len = ERROR_SPAN * 2;
-    char* error_buf = (char*)calloc(len, 1);
-    memcpy(error_buf, g_raw + start, len);
-    log_error("%s\n%*c^", error_buf, ERROR_SPAN + 10, ' '); // + len("[ERR] - ")
-    free(error_buf);
+        return;
+    }
+
+    size_t buffer_len = strlen(g_raw);
+    size_t line_start = token->start;
+    while (line_start > 0)
+    {
+        char ch = g_raw[line_start - 1];
+        if (ch == '\n' || ch == '\r')
+        {
+            break;
+        }
+        line_start--;
+    }
+
+    size_t line_end = token->start;
+    while (line_end < buffer_len)
+    {
+        char ch = g_raw[line_end];
+        if (ch == '\n' || ch == '\r' || ch == '\0')
+        {
+            break;
+        }
+        line_end++;
+    }
+
+    size_t len = (line_end > line_start) ? (line_end - line_start) : 0;
+    char* line_buf = (char*)calloc(len + 1, 1);
+    memcpy(line_buf, g_raw + line_start, len);
+    line_buf[len] = '\0';
+
+    size_t caret_column = token->start - line_start;
+    size_t prefix_len = strlen("[ERR] - ");
+    log_error("%s\n%*c^", line_buf, (int)(caret_column + prefix_len), ' ');
+    free(line_buf);
+    g_error_token = NULL;
 }
 
 void require(token_type_t type)
@@ -333,6 +384,7 @@ void require(token_type_t type)
     log_debug("Requiring %s...", get_token_type_string(type));
     if (!expect(type))
     {
+        g_error_token = g_cur;
         log_error("Expected token %s, got %s.", get_token_type_string(type),
                   get_token_type_string(g_cur->type));
         log_context();
@@ -347,6 +399,7 @@ void require_n(token_type_t type, size_t offset)
               offset);
     if (!expect_n(type, offset))
     {
+        g_error_token = g_cur + offset;
         log_error("Expected token %s at offset %d, got %s.",
                   get_token_type_string(type), offset,
                   get_token_type_string((g_cur + offset)->type));
@@ -526,6 +579,8 @@ ast* parse_call()
     log_info("Parsing call...");
 
     ast* expr = ast_new(AST_CALL);
+    expr->data.call.args = NULL;
+    expr->data.call.count = 0;
 
     require(TOK_IDENTIFIER);
     ast* ident = ast_new(AST_IDENTIFIER);
@@ -536,7 +591,29 @@ ast* parse_call()
     require(TOK_L_PAREN);
     next();
 
-    /* Parse arguments */
+    size_t capacity = 0;
+    if (!expect(TOK_R_PAREN))
+    {
+        capacity = 4;
+        expr->data.call.args = (ast**)calloc(capacity, sizeof(ast*));
+        while (true)
+        {
+            if (expr->data.call.count >= capacity)
+            {
+                capacity *= 2;
+                expr->data.call.args = (ast**)realloc(expr->data.call.args,
+                                                      capacity * sizeof(ast*));
+            }
+            expr->data.call.args[expr->data.call.count++] = parse_expression();
+
+            if (g_cur->type == TOK_COMMA)
+            {
+                next();
+                continue;
+            }
+            break;
+        }
+    }
 
     require(TOK_R_PAREN);
     next();
@@ -661,6 +738,14 @@ ast* parse_statement()
     // ^ current   ^ next
     if (expect(TOK_IDENTIFIER))
     {
+        if (expect_n(TOK_L_PAREN, 1))
+        {
+            ast* call = parse_call();
+            require(TOK_SEMICOLON);
+            next();
+            return call;
+        }
+
         require_n(TOK_ASSIGN, 1);
         return parse_assignment();
     }
@@ -765,6 +850,9 @@ ast* parse(char* buffer)
     free(tokens);
 
     free(g_raw);
+    g_raw = NULL;
+    g_cur = NULL;
+    g_error_token = NULL;
 
     return program;
 }
