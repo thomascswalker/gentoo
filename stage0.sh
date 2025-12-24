@@ -90,7 +90,7 @@ fi
 
 echo "Assembling Gentoo output..."
 nasm -f elf64 "${ASM_OUTPUT}" -o "${OBJ_OUTPUT}"
-gcc "${OBJ_OUTPUT}" -o "${BINARY_OUTPUT}" -z noexecstack
+gcc "${OBJ_OUTPUT}" -o "${BINARY_OUTPUT}" -z noexecstack -no-pie
 
 echo "Executing program generated from '${INPUT_LABEL}':"
 set +e
