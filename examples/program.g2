@@ -1,15 +1,14 @@
 fn test_func() =>
 {
-    let var = 15;
-    let var2 = "test stirng";
+    let var = 4;
     return var;
 }
 
 fn main() =>
 {
-    let var = 5;
-    var = test_func();
-    var = var * 3;
-    print(var);
+    let var = test_func();
+    var = var * 2;
+    printf("'var'    : 0x%04x", var);
+    printf("'var' * 2: 0x%04x", var * 2);
     return 0;
 }

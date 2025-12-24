@@ -24,6 +24,7 @@ codegen_t CODEGEN_X86_64 = {
             .declvar = x86_declvar,
             .assign = x86_assign,
             .call = x86_call,
+            .string = x86_string,
             .expr = x86_expr,
             .syscall = x86_syscall,
             .comment = x86_comment,
@@ -32,15 +33,15 @@ codegen_t CODEGEN_X86_64 = {
     .type = X86_64,
 };
 
-bool g_in_main = false;
 bool g_in_function = false;
 scope_t* g_scope = NULL;
 scope_t* g_global_scope = NULL;
-
-/**
- * @brief Records an offset to the stack base.
- */
 ptrdiff_t g_stack_offset = 0;
+int g_string_count = 0;
+
+static const char* ARG_REGISTERS[] = {RDI, RSI, RDX, RCX, R8, R9};
+static const size_t ARG_REGISTER_COUNT =
+    sizeof(ARG_REGISTERS) / sizeof(ARG_REGISTERS[0]);
 
 scope_t* scope_new(scope_t* parent)
 {
@@ -227,55 +228,6 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-void x86_print()
-{
-    EMIT(SECTION_GLOBAL, "global _%s\n", BUILTIN_PRINT);
-    EMIT(SECTION_TEXT, "_%s:\n", BUILTIN_PRINT);
-    EMIT(SECTION_TEXT, "\tpush rbp\n"
-                       "\tmov rbp, rsp\n"
-                       "\tsub rsp, 48\n"
-                       "\tmov eax, edi\n"
-                       "\tmov byte [rbp-1], 0\n"
-                       "\tlea rsi, [rbp-1]\n"
-                       "\tcmp eax, 0\n"
-                       "\tjne _" BUILTIN_PRINT "_convert\n"
-                       "\tmov byte [rsi-1], '0'\n"
-                       "\tlea rsi, [rsi-1]\n"
-                       "\tmov edx, 1\n"
-                       "\tjmp _" BUILTIN_PRINT "_emit\n"
-                       "\t_" BUILTIN_PRINT "_convert:\n"
-                       "\t\txor ecx, ecx\n"
-                       "\t\tcmp eax, 0\n"
-                       "\t\tjge _" BUILTIN_PRINT "_abs_ready\n"
-                       "\t\tneg eax\n"
-                       "\t\tmov cl, 1\n"
-                       "\t_" BUILTIN_PRINT "_abs_ready:\n"
-                       "\t\tlea rsi, [rbp-1]\n"
-                       "\t_" BUILTIN_PRINT "_convert_loop:\n"
-                       "\t\txor edx, edx\n"
-                       "\t\tmov ebx, 10\n"
-                       "\t\tdiv ebx\n"
-                       "\t\tadd dl, '0'\n"
-                       "\t\tdec rsi\n"
-                       "\t\tmov byte [rsi], dl\n"
-                       "\t\ttest eax, eax\n"
-                       "\t\tjne _" BUILTIN_PRINT "_convert_loop\n"
-                       "\t\ttest cl, cl\n"
-                       "\t\tjz _" BUILTIN_PRINT "_emit\n"
-                       "\t\tdec rsi\n"
-                       "\t\tmov byte [rsi], '-'\n"
-                       "\t_" BUILTIN_PRINT "_emit:\n"
-                       "\t\tlea rdx, [rbp-1]\n"
-                       "\t\tsub rdx, rsi\n"
-                       "\t\tmov eax, 1\n"
-                       "\t\tmov edi, 1\n"
-                       "\t\tmov rsi, rsi\n"
-                       "\t\tsyscall\n"
-                       "\t\tadd rsp, 48\n"
-                       "\t\tpop rbp\n"
-                       "\t\tret\n");
-}
-
 /* Emits a simple comment line. */
 void x86_comment(char* text)
 {
@@ -382,11 +334,9 @@ void x86_declfn(ast* node)
 
     bool prev_in_function = g_in_function;
     ptrdiff_t prev_stack_offset = g_stack_offset;
-    bool prev_is_main = g_in_main;
 
     g_in_function = true;
     g_stack_offset = 0;
-    g_in_main = (strcmp(name, "main") == 0);
 
     EMIT(SECTION_GLOBAL, "global %s\n", name);
     EMIT(SECTION_TEXT, "%s:\n", name);
@@ -397,7 +347,6 @@ void x86_declfn(ast* node)
 
     g_in_function = prev_in_function;
     g_stack_offset = prev_stack_offset;
-    g_in_main = prev_is_main;
     EXIT(DECLFN);
 }
 
@@ -463,16 +412,6 @@ void x86_assign(ast* node)
 void x86_return(ast* node)
 {
     ENTER(RET);
-
-    if (g_in_main)
-    {
-        // Ensure register 5 (rdi) is not locked. It's required for
-        // returning the exit code in Linux, where RDI is the register
-        // for the first argument of a function (in this case, syscall 60
-        // which is Linux's exit syscall).
-        ASSERT(!register_get("rdi")->locked,
-               "%s cannot be locked at the point of return.", "RDI");
-    }
     ast* rhs = node->data.ret.node;
     char* rhs_reg;
 
@@ -491,30 +430,13 @@ void x86_return(ast* node)
                rhs->type);
     }
 
-    // If this is NOT the main function, just do a normal return.
-    // This will return the value in RAX.
-    if (!g_in_main)
+    // Move the result into RAX before returning to the caller.
+    EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
+    if (rhs->type != AST_CALL)
     {
-        // Move the result into RAX
-        EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
-        if (rhs->type != AST_CALL)
-        {
-            register_unlock();
-        }
-        x86_epilogue(true);
+        register_unlock();
     }
-    // Otherwise we need to exit the program. Move RAX into RDI,
-    // which is the first argument for the linux exit syscall.
-    else
-    {
-        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", rhs_reg);
-        if (rhs->type != AST_CALL)
-        {
-            register_unlock();
-        }
-        x86_epilogue(false);
-        x86_syscall(X86_EXIT);
-    }
+    x86_epilogue(true);
     EXIT(RET);
 }
 
@@ -524,29 +446,64 @@ char* x86_call(ast* node)
     char* reg = RAX;
     char* callee = node->data.call.identifier->data.identifier.name;
     size_t arg_count = node->data.call.count;
+    size_t reg_arg_count =
+        arg_count < ARG_REGISTER_COUNT ? arg_count : ARG_REGISTER_COUNT;
+    size_t stack_arg_count =
+        arg_count > ARG_REGISTER_COUNT ? arg_count - ARG_REGISTER_COUNT : 0;
 
-    // print(int value)
-    if (strcmp(callee, BUILTIN_PRINT) == 0)
+    // Push stack arguments (evaluated right-to-left) so they land on the stack
+    // in the expected order for the System V ABI.
+    for (size_t idx = arg_count; idx > reg_arg_count;)
     {
-        ASSERT(arg_count == 1, "`print` expects exactly one argument.");
-        ast* arg = node->data.call.args[0];
-        ASSERT(arg->type == AST_CONSTANT || arg->type == AST_IDENTIFIER,
-               "`print` argument must be a constant or identifier.");
-
+        idx--;
+        ast* arg = node->data.call.args[idx];
         char* arg_reg = x86_expr(arg);
-        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", arg_reg);
+        EMIT(SECTION_TEXT, "\tpush %s\n", arg_reg);
         if (arg->type != AST_CALL)
         {
             register_unlock();
         }
-        EMIT(SECTION_TEXT, "\tcall _%s\n", BUILTIN_PRINT);
-        EXIT(CALL);
-        return reg;
     }
 
+    // Evaluate register arguments left-to-right, push to preserve, then pop
+    // them into the actual calling-convention registers in reverse order.
+    for (size_t i = 0; i < reg_arg_count; i++)
+    {
+        ast* arg = node->data.call.args[i];
+        char* arg_reg = x86_expr(arg);
+        EMIT(SECTION_TEXT, "\tpush %s\n", arg_reg);
+        if (arg->type != AST_CALL)
+        {
+            register_unlock();
+        }
+    }
+
+    for (size_t i = reg_arg_count; i > 0; i--)
+    {
+        const char* target = ARG_REGISTERS[i - 1];
+        EMIT(SECTION_TEXT, "\tpop %s\n", target);
+    }
+
+    // System V varargs require RAX to contain the number of vector registers
+    // used. We only pass integer arguments, so set it to zero.
+    EMIT(SECTION_TEXT, "\txor rax, rax\n");
     EMIT(SECTION_TEXT, "\tcall %s\n", callee);
+
+    if (stack_arg_count > 0)
+    {
+        EMIT(SECTION_TEXT, "\tadd rsp, %zu\n", stack_arg_count * 8);
+    }
+
     EXIT(CALL);
     return reg;
+}
+
+char* x86_string(char* text)
+{
+    char* string_name = formats("printf_string_%d", g_string_count);
+    EMIT(SECTION_DATA, "\t%s: db \"%s\", 10, 0\n", string_name, text);
+    g_string_count++;
+    return string_name;
 }
 
 char* x86_expr(ast* node)
@@ -586,6 +543,13 @@ char* x86_expr(ast* node)
             }
         }
         break;
+    case AST_STRING:
+    {
+        reg = register_lock();
+        char* string_label = x86_string(node->data.string.value);
+        EMIT(SECTION_TEXT, "\tlea %s, [%s]\n", reg, string_label);
+        break;
+    }
     case AST_CALL:
         reg = x86_call(node);
         break;
@@ -660,7 +624,8 @@ void x86_program(ast* node)
     EMIT(SECTION_DATA, "section .data\n");
     EMIT(SECTION_TEXT, "section .text\n");
 
-    x86_print();
+    // External built-ins
+    EMIT(SECTION_GLOBAL, "extern printf\n");
 
     for (size_t i = 0; i < node->data.program.count; i++)
     {

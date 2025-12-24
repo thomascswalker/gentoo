@@ -92,16 +92,13 @@ void x86_declfn(ast* node);
 void x86_declvar(ast* node);
 void x86_assign(ast* node);
 char* x86_call(ast* node);
+char* x86_string(char* text);
 void x86_return(ast* node);
 char* x86_expr(ast* node);
 void x86_syscall(int code);
 void x86_comment(char* text);
 void x86_epilogue(bool emit_ret);
 void x86_prologue();
-
-/* Built-ins */
-
-void x86_print();
 
 extern codegen_t CODEGEN_X86_64;
 
