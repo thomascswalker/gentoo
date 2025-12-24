@@ -546,7 +546,9 @@ char* x86_expr(ast* node)
     case AST_STRING:
     {
         reg = register_lock();
+        // Declare a new string
         char* string_label = x86_string(node->data.string.value);
+        // Store the result of the string into the register
         EMIT(SECTION_TEXT, "\tlea %s, [%s]\n", reg, string_label);
         break;
     }
