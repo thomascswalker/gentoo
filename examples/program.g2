@@ -1,6 +1,7 @@
 fn test_func() =>
 {
     let var = 15;
+    let var2 = "test stirng";
     return var;
 }
 

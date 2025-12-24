@@ -35,7 +35,7 @@ typedef enum token_type_t
     TOK_CARRIAGE = '\r',
     TOK_COLON = ':',
     TOK_SEMICOLON = ';',
-    TOK_QUOTE = '"',
+    TOK_STRING = '"',
     TOK_COMMA = ',',
     TOK_L_PAREN = '(',
     TOK_R_PAREN = ')',

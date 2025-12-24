@@ -66,7 +66,7 @@ char* get_token_type_string(enum token_type_t type)
         CASE(CARRIAGE)
         CASE(COLON)
         CASE(SEMICOLON)
-        CASE(QUOTE)
+        CASE(STRING)
         CASE(L_PAREN)
         CASE(R_PAREN)
         CASE(L_SQUARE)
@@ -230,7 +230,7 @@ token_t* tokenize_string()
     {
         g_pos++;
     }
-    token->type = TOK_QUOTE;
+    token->type = TOK_STRING;
     token->end = g_pos;
     return token;
 }

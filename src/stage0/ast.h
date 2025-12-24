@@ -32,12 +32,14 @@ typedef enum ast_node_t
     AST_IDENTIFIER,
     AST_BINOP,
     AST_CONSTANT,
+    AST_STRING,
     AST_CALL,
 } ast_node_t;
 
 typedef enum ast_constant_t
 {
-    CONST_INT
+    CONST_INT,
+    CONST_STRING,
 } ast_constant_t;
 
 /* Enumeration for the binary operation types. */
@@ -82,6 +84,7 @@ AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
+AST_NODE(string, AST_PROP(char*, value));
 AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
 AST_NODE(call, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
                    AST_PROP(size_t, count));
@@ -111,6 +114,7 @@ struct ast
         struct ast_declfn declfn;
         struct ast_identifier identifier;
         struct ast_constant constant;
+        struct ast_string string;
         struct ast_call call;
         struct ast_assign assign;
         struct ast_binop binop;
@@ -134,6 +138,7 @@ ast* parse_constant();
 ast* parse_identifier();
 ast* parse_factor();
 ast* parse_term();
+ast* parse_string();
 ast* parse_expression();
 ast* parse_assignment();
 ast* parse_call();

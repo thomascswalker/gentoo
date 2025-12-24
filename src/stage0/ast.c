@@ -31,6 +31,8 @@ char* ast_to_string(ast_node_t type)
         return "IDENTIFIER";
     case AST_CONSTANT:
         return "CONSTANT";
+    case AST_STRING:
+        return "STRING";
     case AST_DECLVAR:
         return "DECLVAR";
     case AST_DECLFN:
@@ -117,6 +119,10 @@ void ast_fmt_buf(ast* n, buffer_t* out)
     case AST_CONSTANT:
         buffer_printf(out, "{\"type\": \"%s\", \"value\": %d}",
                       ast_to_string(n->type), n->data.constant.value);
+        break;
+    case AST_STRING:
+        buffer_printf(out, "{\"type\": \"%s\", \"value\": %s}",
+                      ast_to_string(n->type), n->data.string.value);
         break;
     case AST_DECLVAR:
         buffer_printf(out,
@@ -295,6 +301,9 @@ void ast_free(ast* node)
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
         break;
+    case AST_STRING:
+        free(node->data.string.value);
+        break;
     case AST_CALL:
         if (node->data.call.args)
         {
@@ -458,6 +467,10 @@ ast* parse_factor()
     {
         return parse_constant();
     }
+    if (g_cur->type == TOK_STRING)
+    {
+        return parse_string();
+    }
     else if (g_cur->type == TOK_IDENTIFIER)
     {
         return parse_identifier();
@@ -499,28 +512,45 @@ ast* parse_term()
     return node;
 }
 
+ast* parse_string()
+{
+    ast* str = ast_new(AST_STRING);
+    str->data.string.value = strdup(g_cur->value);
+    str->start = g_cur->start;
+    str->end = g_cur->end;
+    next();
+    return str;
+}
+
 ast* parse_expression()
 {
     log_debug("Parsing expression...");
 
-    // If the current token is a constant and the next token is a semicolon,
-    // parse the constant and return.
-    // e.g. const a = 5;
-    //                ^^
-    if (is_constant(g_cur->type) && expect_n(TOK_SEMICOLON, 1))
-    {
-        return parse_constant();
-    }
-    // If the current token is an identifier and the next token is a semicolon,
-    // parse the identifier and return.
-    // e.g. const a = 5;
-    //      const b = a;
-    //                ^^
-    else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_SEMICOLON, 1))
-    {
-        return parse_identifier();
-    }
-    else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_L_PAREN, 1))
+    // if (g_cur->type == TOK_STRING)
+    // {
+    //     return parse_string();
+    // }
+
+    // // If the current token is a constant and the next token is a semicolon,
+    // // parse the constant and return.
+    // // e.g. const a = 5;
+    // //                ^^
+    // if (is_constant(g_cur->type) && expect_n(TOK_SEMICOLON, 1))
+    // {
+    //     return parse_constant();
+    // }
+    // // If the current token is an identifier and the next token is a
+    // semicolon,
+    // // parse the identifier and return.
+    // // e.g. const a = 5;
+    // //      const b = a;
+    // //                ^^
+    // else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_SEMICOLON, 1))
+    // {
+    //     return parse_identifier();
+    // }
+    // else
+    if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_L_PAREN, 1))
     {
         return parse_call();
     }
