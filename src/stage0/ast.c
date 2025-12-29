@@ -3,7 +3,7 @@
 #include "buffer.h"
 #include "codegen.h"
 #include "log.h"
-#include "misc.h"
+#include "strings.h"
 #include "tokenize.h"
 
 #include <stdarg.h>
@@ -340,6 +340,11 @@ bool expect(token_type_t type)
     return g_cur->type == type;
 }
 
+bool expect_2(token_type_t type_a, token_type_t type_b)
+{
+    return g_cur->type == type_a && g_cur->type == type_b;
+}
+
 bool expect_n(token_type_t type, size_t offset)
 {
     return (g_cur + offset)->type == type;
@@ -526,30 +531,6 @@ ast* parse_expression()
 {
     log_debug("Parsing expression...");
 
-    // if (g_cur->type == TOK_STRING)
-    // {
-    //     return parse_string();
-    // }
-
-    // // If the current token is a constant and the next token is a semicolon,
-    // // parse the constant and return.
-    // // e.g. const a = 5;
-    // //                ^^
-    // if (is_constant(g_cur->type) && expect_n(TOK_SEMICOLON, 1))
-    // {
-    //     return parse_constant();
-    // }
-    // // If the current token is an identifier and the next token is a
-    // semicolon,
-    // // parse the identifier and return.
-    // // e.g. const a = 5;
-    // //      const b = a;
-    // //                ^^
-    // else if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_SEMICOLON, 1))
-    // {
-    //     return parse_identifier();
-    // }
-    // else
     if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_L_PAREN, 1))
     {
         return parse_call();

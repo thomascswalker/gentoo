@@ -1,8 +1,9 @@
 #ifndef MACROS_H
 #define MACROS_H
 
-#include "log.h"
 #include <stdlib.h>
+
+#include "log.h"
 
 #define ASSERT(cond, ...)                                                      \
     if (!(cond))                                                               \

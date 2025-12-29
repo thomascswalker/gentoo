@@ -2,6 +2,7 @@
 #define X86_64_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef enum x86_syscall_t
 {
@@ -18,6 +19,13 @@ typedef enum symbol_type_t
     SYMBOL_LOCAL,
 } symbol_type_t;
 
+typedef enum symbol_value_t
+{
+    SYMBOL_VALUE_UNKNOWN,
+    SYMBOL_VALUE_INT,
+    SYMBOL_VALUE_STRING,
+} symbol_value_t;
+
 // Returns a printable name for the provided symbol type.
 static char* symbol_type_to_string(symbol_type_t type)
 {
@@ -28,18 +36,34 @@ static char* symbol_type_to_string(symbol_type_t type)
     return "LOCAL";
 }
 
+static char* symbol_value_to_string(symbol_value_t kind)
+{
+    switch (kind)
+    {
+    case SYMBOL_VALUE_INT:
+        return "INT";
+    case SYMBOL_VALUE_STRING:
+        return "STRING";
+    case SYMBOL_VALUE_UNKNOWN:
+    default:
+        return "UNKNOWN";
+    }
+}
+
 typedef struct symbol_t
 {
     const char* name;
     symbol_type_t type;
+    symbol_value_t value_kind;
     ptrdiff_t offset; // Stack offset
 } symbol_t;
 
 // Formats a symbol into a human-readable string for logging/debugging.
 static char* symbol_to_string(symbol_t* symbol)
 {
-    return formats("'%s', %s, 0x%02x", symbol->name,
-                   symbol_type_to_string(symbol->type), symbol->offset);
+    return formats("'%s', %s, %s, 0x%02x", symbol->name,
+                   symbol_type_to_string(symbol->type),
+                   symbol_value_to_string(symbol->value_kind), symbol->offset);
 }
 
 typedef struct scope_t
@@ -92,16 +116,13 @@ void x86_declfn(ast* node);
 void x86_declvar(ast* node);
 void x86_assign(ast* node);
 char* x86_call(ast* node);
+char* x86_string(char* text);
 void x86_return(ast* node);
 char* x86_expr(ast* node);
 void x86_syscall(int code);
 void x86_comment(char* text);
 void x86_epilogue(bool emit_ret);
 void x86_prologue();
-
-/* Built-ins */
-
-void x86_print();
 
 extern codegen_t CODEGEN_X86_64;
 

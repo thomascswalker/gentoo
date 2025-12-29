@@ -37,6 +37,7 @@ typedef struct codegen_ops_t
     void (*declvar)(ast* node);
     void (*assign)(ast* node);
     char* (*call)(ast* node);
+    char* (*string)(char* text);
     void (*ret)(ast* node);
     char* (*expr)(ast* node);
     void (*syscall)(int code);

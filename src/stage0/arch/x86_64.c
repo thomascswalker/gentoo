@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "ast.h"
+#include "buffer.h"
 #include "codegen.h"
 #include "log.h"
 #include "macros.h"
@@ -9,7 +10,7 @@
 #include "stdlib.h"
 #include "x86_64.h"
 
-#define BUILTIN_PRINT "print"
+#define FN_CONCAT "concat"
 #define ENTER(name) log_debug("Entering " #name)
 #define EXIT(name) log_debug("Exiting " #name)
 
@@ -24,6 +25,7 @@ codegen_t CODEGEN_X86_64 = {
             .declvar = x86_declvar,
             .assign = x86_assign,
             .call = x86_call,
+            .string = x86_string,
             .expr = x86_expr,
             .syscall = x86_syscall,
             .comment = x86_comment,
@@ -32,15 +34,82 @@ codegen_t CODEGEN_X86_64 = {
     .type = X86_64,
 };
 
-bool g_in_main = false;
 bool g_in_function = false;
 scope_t* g_scope = NULL;
 scope_t* g_global_scope = NULL;
-
-/**
- * @brief Records an offset to the stack base.
- */
 ptrdiff_t g_stack_offset = 0;
+int g_string_count = 0;
+bool g_concat_helper_emitted = false;
+
+static const char* ARG_REGISTERS[] = {RDI, RSI, RDX, RCX, R8, R9};
+static const size_t ARG_REGISTER_COUNT =
+    sizeof(ARG_REGISTERS) / sizeof(ARG_REGISTERS[0]);
+
+static void emit_concat(void);
+
+// Concatenates two strings by allocating a new buffer for the resultant string.
+static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
+{
+    ENTER(STR_CONCAT);
+
+    // Evaluate both operands so we have registers holding their addresses.
+    char* lhs_reg = x86_expr(lhs_node);
+    char* rhs_reg = x86_expr(rhs_node);
+
+    // Move the evaluated pointers into calling-convention registers.
+    EMIT(SECTION_TEXT, "\tmov rdi, %s\n", lhs_reg);
+    EMIT(SECTION_TEXT, "\tmov rsi, %s\n", rhs_reg);
+
+    if (rhs_node->type != AST_CALL)
+    {
+        register_unlock();
+    }
+    if (lhs_node->type != AST_CALL)
+    {
+        register_unlock();
+    }
+
+    // Call the shared helper which returns the concatenated buffer in RAX.
+    EMIT(SECTION_TEXT, "\tcall %s\n", FN_CONCAT);
+
+    char* dest_reg = register_lock();
+    EMIT(SECTION_TEXT, "\tmov %s, rax\n", dest_reg);
+
+    EXIT(STR_CONCAT);
+    return dest_reg;
+}
+
+static void emit_concat(void)
+{
+    EMIT(SECTION_TEXT, "%s:\n", FN_CONCAT);
+    EMIT(SECTION_TEXT, "\tpush rbp\n");
+    EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
+    EMIT(SECTION_TEXT, "\tsub rsp, 40\n");
+    EMIT(SECTION_TEXT, "\tmov [rbp-8], rdi\n");
+    EMIT(SECTION_TEXT, "\tmov [rbp-16], rsi\n");
+    EMIT(SECTION_TEXT, "\tmov rdi, [rbp-8]\n");
+    EMIT(SECTION_TEXT, "\tcall strlen\n");
+    EMIT(SECTION_TEXT, "\tmov [rbp-24], rax\n");
+    EMIT(SECTION_TEXT, "\tmov rdi, [rbp-16]\n");
+    EMIT(SECTION_TEXT, "\tcall strlen\n");
+    EMIT(SECTION_TEXT, "\tmov [rbp-32], rax\n");
+    EMIT(SECTION_TEXT, "\tmov rax, [rbp-24]\n");
+    EMIT(SECTION_TEXT, "\tadd rax, [rbp-32]\n");
+    EMIT(SECTION_TEXT, "\tadd rax, 1\n");
+    EMIT(SECTION_TEXT, "\tmov rdi, rax\n");
+    EMIT(SECTION_TEXT, "\tcall malloc\n");
+    EMIT(SECTION_TEXT, "\tmov [rbp-40], rax\n");
+    EMIT(SECTION_TEXT, "\tmov rdi, rax\n");
+    EMIT(SECTION_TEXT, "\tmov rsi, [rbp-8]\n");
+    EMIT(SECTION_TEXT, "\tcall strcpy\n");
+    EMIT(SECTION_TEXT, "\tmov rdi, [rbp-40]\n");
+    EMIT(SECTION_TEXT, "\tmov rsi, [rbp-16]\n");
+    EMIT(SECTION_TEXT, "\tcall strcat\n");
+    EMIT(SECTION_TEXT, "\tmov rax, [rbp-40]\n");
+    EMIT(SECTION_TEXT, "\tadd rsp, 40\n");
+    EMIT(SECTION_TEXT, "\tpop rbp\n");
+    EMIT(SECTION_TEXT, "\tret\n");
+}
 
 scope_t* scope_new(scope_t* parent)
 {
@@ -124,6 +193,7 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
     symbol_t* symbol = &scope->symbols[scope->count++];
     symbol->name = name;
     symbol->type = type;
+    symbol->value_kind = SYMBOL_VALUE_UNKNOWN;
     symbol->offset = 0;
 
     char* message = symbol_to_string(symbol);
@@ -169,6 +239,76 @@ symbol_t* symbol_resolve(const char* name)
     return symbol;
 }
 
+static symbol_value_t get_symbol_value_kind(ast* node)
+{
+    if (!node)
+    {
+        return SYMBOL_VALUE_UNKNOWN;
+    }
+
+    switch (node->type)
+    {
+    case AST_CONSTANT:
+        if (node->data.constant.type == CONST_STRING)
+        {
+            return SYMBOL_VALUE_STRING;
+        }
+        return SYMBOL_VALUE_INT;
+    case AST_STRING:
+        return SYMBOL_VALUE_STRING;
+    case AST_IDENTIFIER:
+    {
+        symbol_t* symbol = symbol_resolve(node->data.identifier.name);
+        ASSERT(symbol->value_kind != SYMBOL_VALUE_UNKNOWN,
+               "Symbol '%s' has unknown type.", symbol->name);
+        return symbol->value_kind;
+    }
+    case AST_BINOP:
+    {
+        symbol_value_t lhs = get_symbol_value_kind(node->data.binop.lhs);
+        symbol_value_t rhs = get_symbol_value_kind(node->data.binop.rhs);
+
+        ASSERT(lhs != SYMBOL_VALUE_UNKNOWN,
+               "Left-hand symbol has unknown type.");
+        ASSERT(rhs != SYMBOL_VALUE_UNKNOWN,
+               "Right-hand symbol has unknown type.");
+
+        log_debug("lhs: %s", ast_to_string(node->data.binop.lhs->type));
+        log_debug("rhs: %s", ast_to_string(node->data.binop.rhs->type));
+
+        switch (node->data.binop.op)
+        {
+        case BIN_ADD:
+            if (lhs == SYMBOL_VALUE_STRING && rhs == SYMBOL_VALUE_STRING)
+            {
+                return SYMBOL_VALUE_STRING;
+            }
+            ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
+                   "Cannot add %s to %s.", symbol_value_to_string(lhs),
+                   symbol_value_to_string(rhs));
+            return SYMBOL_VALUE_INT;
+        case BIN_SUB:
+        case BIN_MUL:
+        case BIN_DIV:
+        case BIN_EQ:
+            ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
+                   "Operator %s only supports integers.",
+                   binop_to_string(node->data.binop.op));
+            return SYMBOL_VALUE_INT;
+        default:
+            break;
+        }
+        break;
+    }
+    case AST_CALL:
+        return SYMBOL_VALUE_INT;
+    default:
+        break;
+    }
+
+    return SYMBOL_VALUE_INT;
+}
+
 void get_global_symbols(ast* node)
 {
     if (!node)
@@ -202,9 +342,25 @@ void get_global_symbols(ast* node)
             if (lhs && lhs->type == AST_DECLVAR)
             {
                 char* name = lhs->data.declvar.identifier->data.identifier.name;
-                if (scope_lookup_shallow(g_global_scope, name) == NULL)
+                symbol_t* symbol = scope_lookup_shallow(g_global_scope, name);
+                if (symbol == NULL)
                 {
-                    scope_add_symbol(g_global_scope, name, SYMBOL_GLOBAL);
+                    symbol =
+                        scope_add_symbol(g_global_scope, name, SYMBOL_GLOBAL);
+                }
+
+                symbol_value_t rhs_kind =
+                    get_symbol_value_kind(statement->data.assign.rhs);
+                if (symbol->value_kind == SYMBOL_VALUE_UNKNOWN)
+                {
+                    symbol->value_kind = rhs_kind;
+                }
+                else
+                {
+                    ASSERT(symbol->value_kind == rhs_kind,
+                           "Global '%s' type mismatch (%s vs %s).", name,
+                           symbol_value_to_string(symbol->value_kind),
+                           symbol_value_to_string(rhs_kind));
                 }
             }
         }
@@ -227,55 +383,6 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-void x86_print()
-{
-    EMIT(SECTION_GLOBAL, "global _%s\n", BUILTIN_PRINT);
-    EMIT(SECTION_TEXT, "_%s:\n", BUILTIN_PRINT);
-    EMIT(SECTION_TEXT, "\tpush rbp\n"
-                       "\tmov rbp, rsp\n"
-                       "\tsub rsp, 48\n"
-                       "\tmov eax, edi\n"
-                       "\tmov byte [rbp-1], 0\n"
-                       "\tlea rsi, [rbp-1]\n"
-                       "\tcmp eax, 0\n"
-                       "\tjne _" BUILTIN_PRINT "_convert\n"
-                       "\tmov byte [rsi-1], '0'\n"
-                       "\tlea rsi, [rsi-1]\n"
-                       "\tmov edx, 1\n"
-                       "\tjmp _" BUILTIN_PRINT "_emit\n"
-                       "\t_" BUILTIN_PRINT "_convert:\n"
-                       "\t\txor ecx, ecx\n"
-                       "\t\tcmp eax, 0\n"
-                       "\t\tjge _" BUILTIN_PRINT "_abs_ready\n"
-                       "\t\tneg eax\n"
-                       "\t\tmov cl, 1\n"
-                       "\t_" BUILTIN_PRINT "_abs_ready:\n"
-                       "\t\tlea rsi, [rbp-1]\n"
-                       "\t_" BUILTIN_PRINT "_convert_loop:\n"
-                       "\t\txor edx, edx\n"
-                       "\t\tmov ebx, 10\n"
-                       "\t\tdiv ebx\n"
-                       "\t\tadd dl, '0'\n"
-                       "\t\tdec rsi\n"
-                       "\t\tmov byte [rsi], dl\n"
-                       "\t\ttest eax, eax\n"
-                       "\t\tjne _" BUILTIN_PRINT "_convert_loop\n"
-                       "\t\ttest cl, cl\n"
-                       "\t\tjz _" BUILTIN_PRINT "_emit\n"
-                       "\t\tdec rsi\n"
-                       "\t\tmov byte [rsi], '-'\n"
-                       "\t_" BUILTIN_PRINT "_emit:\n"
-                       "\t\tlea rdx, [rbp-1]\n"
-                       "\t\tsub rdx, rsi\n"
-                       "\t\tmov eax, 1\n"
-                       "\t\tmov edi, 1\n"
-                       "\t\tmov rsi, rsi\n"
-                       "\t\tsyscall\n"
-                       "\t\tadd rsp, 48\n"
-                       "\t\tpop rbp\n"
-                       "\t\tret\n");
-}
-
 /* Emits a simple comment line. */
 void x86_comment(char* text)
 {
@@ -293,6 +400,18 @@ char* x86_binop(ast* node)
     ENTER(BINOP);
 
     ast_binop* binop = &node->data.binop;
+
+    if (binop->op == BIN_ADD)
+    {
+        symbol_value_t lhs_kind = get_symbol_value_kind(binop->lhs);
+        symbol_value_t rhs_kind = get_symbol_value_kind(binop->rhs);
+        if (lhs_kind == SYMBOL_VALUE_STRING && rhs_kind == SYMBOL_VALUE_STRING)
+        {
+            char* string_reg = x86_concat_strings(binop->lhs, binop->rhs);
+            EXIT(BINOP);
+            return string_reg;
+        }
+    }
 
     // Reserve a register for the output
     char* out_reg = register_lock();
@@ -382,11 +501,9 @@ void x86_declfn(ast* node)
 
     bool prev_in_function = g_in_function;
     ptrdiff_t prev_stack_offset = g_stack_offset;
-    bool prev_is_main = g_in_main;
 
     g_in_function = true;
     g_stack_offset = 0;
-    g_in_main = (strcmp(name, "main") == 0);
 
     EMIT(SECTION_GLOBAL, "global %s\n", name);
     EMIT(SECTION_TEXT, "%s:\n", name);
@@ -397,7 +514,6 @@ void x86_declfn(ast* node)
 
     g_in_function = prev_in_function;
     g_stack_offset = prev_stack_offset;
-    g_in_main = prev_is_main;
     EXIT(DECLFN);
 }
 
@@ -407,6 +523,7 @@ void x86_assign(ast* node)
 
     // Emit the right hand side first (fully processing any expressions)
     ast* rhs = node->data.assign.rhs;
+    symbol_value_t rhs_kind = get_symbol_value_kind(rhs);
     char* rhs_reg = x86_expr(rhs);
 
     ast* lhs = node->data.assign.lhs;
@@ -442,6 +559,18 @@ void x86_assign(ast* node)
 
     ASSERT(symbol != NULL, "Failed to resolve symbol for %s", name);
 
+    if (symbol->value_kind == SYMBOL_VALUE_UNKNOWN)
+    {
+        symbol->value_kind = rhs_kind;
+    }
+    else
+    {
+        ASSERT(symbol->value_kind == rhs_kind,
+               "Cannot assign %s value to %s (expected %s).",
+               symbol_value_to_string(rhs_kind), name,
+               symbol_value_to_string(symbol->value_kind));
+    }
+
     if (symbol->type == SYMBOL_GLOBAL)
     {
         EMIT(SECTION_TEXT, "\tmov [%s], %s\n", name, rhs_reg);
@@ -463,16 +592,6 @@ void x86_assign(ast* node)
 void x86_return(ast* node)
 {
     ENTER(RET);
-
-    if (g_in_main)
-    {
-        // Ensure register 5 (rdi) is not locked. It's required for
-        // returning the exit code in Linux, where RDI is the register
-        // for the first argument of a function (in this case, syscall 60
-        // which is Linux's exit syscall).
-        ASSERT(!register_get("rdi")->locked,
-               "%s cannot be locked at the point of return.", "RDI");
-    }
     ast* rhs = node->data.ret.node;
     char* rhs_reg;
 
@@ -480,6 +599,7 @@ void x86_return(ast* node)
     {
     case AST_BINOP:
     case AST_CONSTANT:
+    case AST_STRING:
     case AST_IDENTIFIER:
     case AST_CALL:
         rhs_reg = x86_expr(rhs);
@@ -487,34 +607,17 @@ void x86_return(ast* node)
     default:
         ASSERT(false,
                "Invalid right-hand type for RETURN: %d. Wanted one of "
-               "[BINOP, CONSTANT, IDENTIFIER, CALL].",
+               "[BINOP, CONSTANT, STRING, IDENTIFIER, CALL].",
                rhs->type);
     }
 
-    // If this is NOT the main function, just do a normal return.
-    // This will return the value in RAX.
-    if (!g_in_main)
+    // Move the result into RAX before returning to the caller.
+    EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
+    if (rhs->type != AST_CALL)
     {
-        // Move the result into RAX
-        EMIT(SECTION_TEXT, "\tmov rax, %s\n", rhs_reg);
-        if (rhs->type != AST_CALL)
-        {
-            register_unlock();
-        }
-        x86_epilogue(true);
+        register_unlock();
     }
-    // Otherwise we need to exit the program. Move RAX into RDI,
-    // which is the first argument for the linux exit syscall.
-    else
-    {
-        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", rhs_reg);
-        if (rhs->type != AST_CALL)
-        {
-            register_unlock();
-        }
-        x86_epilogue(false);
-        x86_syscall(X86_EXIT);
-    }
+    x86_epilogue(true);
     EXIT(RET);
 }
 
@@ -524,29 +627,103 @@ char* x86_call(ast* node)
     char* reg = RAX;
     char* callee = node->data.call.identifier->data.identifier.name;
     size_t arg_count = node->data.call.count;
+    size_t reg_arg_count =
+        arg_count < ARG_REGISTER_COUNT ? arg_count : ARG_REGISTER_COUNT;
+    size_t stack_arg_count =
+        arg_count > ARG_REGISTER_COUNT ? arg_count - ARG_REGISTER_COUNT : 0;
 
-    // print(int value)
-    if (strcmp(callee, BUILTIN_PRINT) == 0)
+    // Push stack arguments (evaluated right-to-left) so they land on the stack
+    // in the expected order for the System V ABI.
+    for (size_t idx = arg_count; idx > reg_arg_count;)
     {
-        ASSERT(arg_count == 1, "`print` expects exactly one argument.");
-        ast* arg = node->data.call.args[0];
-        ASSERT(arg->type == AST_CONSTANT || arg->type == AST_IDENTIFIER,
-               "`print` argument must be a constant or identifier.");
-
+        idx--;
+        ast* arg = node->data.call.args[idx];
         char* arg_reg = x86_expr(arg);
-        EMIT(SECTION_TEXT, "\tmov rdi, %s\n", arg_reg);
+        EMIT(SECTION_TEXT, "\tpush %s\n", arg_reg);
         if (arg->type != AST_CALL)
         {
             register_unlock();
         }
-        EMIT(SECTION_TEXT, "\tcall _%s\n", BUILTIN_PRINT);
-        EXIT(CALL);
-        return reg;
     }
 
+    // Evaluate register arguments left-to-right, push to preserve, then pop
+    // them into the actual calling-convention registers in reverse order.
+    for (size_t i = 0; i < reg_arg_count; i++)
+    {
+        ast* arg = node->data.call.args[i];
+        char* arg_reg = x86_expr(arg);
+        EMIT(SECTION_TEXT, "\tpush %s\n", arg_reg);
+        if (arg->type != AST_CALL)
+        {
+            register_unlock();
+        }
+    }
+
+    for (size_t i = reg_arg_count; i > 0; i--)
+    {
+        const char* target = ARG_REGISTERS[i - 1];
+        EMIT(SECTION_TEXT, "\tpop %s\n", target);
+    }
+
+    // System V varargs require RAX to contain the number of vector registers
+    // used. We only pass integer arguments, so set it to zero.
+    EMIT(SECTION_TEXT, "\txor rax, rax\n");
     EMIT(SECTION_TEXT, "\tcall %s\n", callee);
+
+    if (stack_arg_count > 0)
+    {
+        EMIT(SECTION_TEXT, "\tadd rsp, %zu\n", stack_arg_count * 8);
+    }
+
     EXIT(CALL);
     return reg;
+}
+
+char* x86_string(char* text)
+{
+    // Create a new buffer for the line we're going to format. This is to
+    // manage memory in a more efficient way.
+    buffer_t* line = buffer_new();
+
+    // Define the name as 'printf_string_n' where 'n' is the current
+    // string count.
+    // Always define as bytes.
+    char* string_name = formats("printf_string_%d", g_string_count);
+    buffer_printf(line, "\t%s: db ", string_name);
+
+    // Write each character of the string individually in order
+    // to emit the exact string as an array of bytes.
+    //
+    // For example, having "\n" is recognized as '\' and 'n', a two character
+    // string, rather than the explicit '\n' value. While this is 'messier'
+    // for the output assembly, it maintains a 1:1 mapping of the input
+    // string and the output string.
+    //
+    // "dog" => 0x64, 0x6F, 0x67
+    size_t text_len = strlen(text);
+    for (size_t i = 0; i < text_len; i++)
+    {
+        // Only pre-pend ", " if we're on the second or greater
+        // character.
+        if (i > 0)
+        {
+            buffer_puts(line, ", ");
+        }
+
+        // Output the current character as a hexadecimal integer.
+        buffer_printf(line, "0x%02X", (uint8_t)text[i]);
+    }
+
+    // Always end with a null-terminator
+    buffer_puts(line, ", 0\n");
+
+    EMIT(SECTION_DATA, line->data);
+
+    buffer_free(line);
+    g_string_count++;
+
+    // Return the name of the string's symbol
+    return string_name;
 }
 
 char* x86_expr(ast* node)
@@ -586,6 +763,15 @@ char* x86_expr(ast* node)
             }
         }
         break;
+    case AST_STRING:
+    {
+        reg = register_lock();
+        // Declare a new string
+        char* string_label = x86_string(node->data.string.value);
+        // Store the result of the string into the register
+        EMIT(SECTION_TEXT, "\tlea %s, [%s]\n", reg, string_label);
+        break;
+    }
     case AST_CALL:
         reg = x86_call(node);
         break;
@@ -660,7 +846,16 @@ void x86_program(ast* node)
     EMIT(SECTION_DATA, "section .data\n");
     EMIT(SECTION_TEXT, "section .text\n");
 
-    x86_print();
+    emit_concat();
+
+    // External built-ins
+    EMIT(SECTION_GLOBAL, "extern printf\n");
+    EMIT(SECTION_GLOBAL, "extern malloc\n");
+    EMIT(SECTION_GLOBAL, "extern free\n");
+    EMIT(SECTION_GLOBAL, "extern memcpy\n");
+    EMIT(SECTION_GLOBAL, "extern strlen\n");
+    EMIT(SECTION_GLOBAL, "extern strcat\n");
+    EMIT(SECTION_GLOBAL, "extern strcpy\n");
 
     for (size_t i = 0; i < node->data.program.count; i++)
     {
