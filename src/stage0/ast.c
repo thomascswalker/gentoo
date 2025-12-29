@@ -3,7 +3,7 @@
 #include "buffer.h"
 #include "codegen.h"
 #include "log.h"
-#include "misc.h"
+#include "strings.h"
 #include "tokenize.h"
 
 #include <stdarg.h>

@@ -1,14 +1,9 @@
-fn test_func() =>
-{
-    let var = 4;
-    return var;
-}
-
 fn main() =>
 {
-    let var = test_func();
-    var = var * 2;
-    printf("'var'    : 0x%04x", var);
-    printf("'var' * 2: 0x%04x", var * 2);
+    let fox = "fox";
+    let dog = "dog";
+    let sentence = "The quick brown " + fox + " jumped over the lazy " + dog;
+    printf(sentence + "\n");
+    printf("Something else!");
     return 0;
 }

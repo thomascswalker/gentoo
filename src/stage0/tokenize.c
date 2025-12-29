@@ -1,5 +1,6 @@
 #include "tokenize.h"
 #include "log.h"
+#include "strings.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -210,22 +211,36 @@ token_t* tokenize_string()
 {
     token_t* token = new_token();
     token->start = g_pos;
+
     // Skip the opening quote
     g_pos++;
+
     int count = 0;
     int start = g_pos;
+
+    // Increment count and position until we reach either another quote
+    // or a null-terminator.
     while (g_buf[g_pos] != '\0' && g_buf[g_pos] != '"')
     {
         count++;
         g_pos++;
     }
+
+    // Make a new token with its value's size equal to the count + 1 (for
+    // the null-terminator).
     alloc_token(token, count + 1);
+
+    // Copy the string's content into the token's value.
     if (count > 0)
     {
         memcpy(token->value, &g_buf[start], count);
     }
+
+    // Null-terminate
     token->value[count] = '\0';
-    // Skip closing quote if present
+    stresc(token->value);
+
+    // Skip closing quote
     if (g_buf[g_pos] == '"')
     {
         g_pos++;
