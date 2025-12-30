@@ -340,9 +340,9 @@ bool expect(token_type_t type)
     return g_cur->type == type;
 }
 
-bool expect_2(token_type_t type_a, token_type_t type_b)
+bool expect_either(token_type_t type_a, token_type_t type_b)
 {
-    return g_cur->type == type_a && g_cur->type == type_b;
+    return g_cur->type == type_a || g_cur->type == type_b;
 }
 
 bool expect_n(token_type_t type, size_t offset)
@@ -407,6 +407,22 @@ void require(token_type_t type)
     log_debug("Found %s", get_token_type_string(g_cur->type));
 }
 
+void require_either(token_type_t type_a, token_type_t type_b)
+{
+    log_debug("Requiring either %s or %s...", get_token_type_string(type_a),
+              get_token_type_string(type_b));
+    if (!expect_either(type_a, type_b))
+    {
+        g_error_token = g_cur;
+        log_error("Expected token %s or %s, got %s.",
+                  get_token_type_string(type_a), get_token_type_string(type_b),
+                  get_token_type_string(g_cur->type));
+        log_context();
+        exit(1);
+    }
+    log_debug("Found %s", get_token_type_string(g_cur->type));
+}
+
 void require_n(token_type_t type, size_t offset)
 {
     log_debug("Requiring %s at offset %d...", get_token_type_string(type),
@@ -442,7 +458,7 @@ ast* parse_constant()
 {
     log_debug("Parsing constant...");
     ast* expr = ast_new(AST_CONSTANT);
-    expr->data.constant.type = CONST_INT;
+    expr->data.constant.type = TYPE_INT;
     expr->data.constant.value = atoi(g_cur->value);
     next();
     return expr;
@@ -456,6 +472,26 @@ ast* parse_identifier()
     expr->data.identifier.name = strdup(g_cur->value);
     next();
     return expr;
+}
+
+ast_value_type_t parse_type()
+{
+    log_debug("Parsing type...");
+    char* types[] = {"void", "int", "string"};
+    int type_count = sizeof(types) * sizeof(char);
+    bool is_valid = false;
+    for (int i = 0; i < type_count; i++)
+    {
+        if (streq(g_cur->value, types[i]))
+        {
+            next();
+            return (ast_value_type_t)i;
+        }
+    }
+    log_error("Invalid type '%s', wanted one of 'void', 'int', or 'string'.",
+              g_cur->value);
+    exit(1);
+    return 0;
 }
 
 /**
@@ -683,13 +719,11 @@ ast* parse_declfn()
     require(TOK_R_PAREN);
     next();
 
-    // // Parse return type
-    // require(TOK_COLON);
-    // next();
-
-    // // Return type
-    // require(TOK_IDENTIFIER);
-    // next();
+    // Parse return type
+    require(TOK_COLON);
+    next();
+    require(TOK_IDENTIFIER);
+    expr->data.declfn.ret_type = parse_type();
 
     // Arrow
     require(TOK_ARROW);
@@ -700,7 +734,6 @@ ast* parse_declfn()
     return expr;
 }
 
-/* return = "return" expr*/
 ast* parse_ret()
 {
     ast* expr = ast_new(AST_RETURN);
@@ -713,7 +746,6 @@ ast* parse_ret()
     return expr;
 }
 
-/* `stmt = assign | call | declvar | declfunc | declclass` */
 ast* parse_statement()
 {
     log_debug("Parsing statement...");

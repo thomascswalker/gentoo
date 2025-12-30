@@ -30,17 +30,19 @@ typedef enum ast_node_t
 
     // Expressions
     AST_IDENTIFIER,
+    AST_TYPE,
     AST_BINOP,
     AST_CONSTANT,
     AST_STRING,
     AST_CALL,
 } ast_node_t;
 
-typedef enum ast_constant_t
+typedef enum ast_value_type_t
 {
-    CONST_INT,
-    CONST_STRING,
-} ast_constant_t;
+    TYPE_VOID,
+    TYPE_INT,
+    TYPE_STRING,
+} ast_value_type_t;
 
 /* Enumeration for the binary operation types. */
 typedef enum ast_binop_t
@@ -82,10 +84,11 @@ AST_NODE(program, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, block));
+AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast_value_type_t, ret_type)
+                     AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
 AST_NODE(string, AST_PROP(char*, value));
-AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_constant_t, type));
+AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_value_type_t, type));
 AST_NODE(call, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
                    AST_PROP(size_t, count));
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));

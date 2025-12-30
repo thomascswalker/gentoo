@@ -249,7 +249,7 @@ static symbol_value_t get_symbol_value_kind(ast* node)
     switch (node->type)
     {
     case AST_CONSTANT:
-        if (node->data.constant.type == CONST_STRING)
+        if (node->data.constant.type == TYPE_STRING)
         {
             return SYMBOL_VALUE_STRING;
         }

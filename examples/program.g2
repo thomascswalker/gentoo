@@ -1,4 +1,14 @@
-fn main() =>
+fn get_int(): int =>
+{
+    return 5;
+}
+
+fn get_string(): string => 
+{
+    return "test!";
+}
+
+fn main(): void =>
 {
     let fox = "fox";
     let dog = "dog";
