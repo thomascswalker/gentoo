@@ -21,6 +21,11 @@ typedef enum token_type_t
     TOK_ELSE,
     TOK_FOR,
     TOK_WHILE,
+    TOK_TRUE,
+    TOK_FALSE,
+    TOK_EQ,
+    TOK_GT,
+    TOK_LT,
 
     TOK_ASSIGN = '=',
     TOK_ADD = '+',

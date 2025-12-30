@@ -55,6 +55,11 @@ char* get_token_type_string(enum token_type_t type)
         CASE(ELSE)
         CASE(FOR)
         CASE(WHILE)
+        CASE(TRUE)
+        CASE(FALSE)
+        CASE(EQ)
+        CASE(GT)
+        CASE(LT)
         CASE(ASSIGN)
         CASE(ADD)
         CASE(SUB)
@@ -108,7 +113,8 @@ bool is_string(char c)
 
 bool is_operator(char c)
 {
-    return c == '+' || c == '-' || c == '*' || c == '/' || c == '=';
+    return c == '+' || c == '-' || c == '*' || c == '/' || c == '=' ||
+           c == '>' || c == '<';
 }
 
 bool is_semicolon(char c)
@@ -196,6 +202,14 @@ token_t* tokenize_keyword()
     {
         token->type = TOK_WHILE;
     }
+    else if (strcmp(token->value, "true") == 0)
+    {
+        token->type = TOK_TRUE;
+    }
+    else if (strcmp(token->value, "false") == 0)
+    {
+        token->type = TOK_FALSE;
+    }
     else
     {
         token->type = TOK_IDENTIFIER;
@@ -266,6 +280,14 @@ token_t* tokenize_operator()
         {
             token->type = TOK_ARROW;
         }
+        else if (strcmp(token->value, "==") == 0)
+        {
+            token->type = TOK_EQ;
+        }
+        else
+        {
+            token->type = TOK_UNKNOWN;
+        }
         g_pos += 2;
         token->end = g_pos;
     }
@@ -275,7 +297,18 @@ token_t* tokenize_operator()
         alloc_token(token, 2);
         token->value[0] = g_buf[g_pos];
         token->value[1] = 0;
-        token->type = (token_type_t)token->value[0];
+        switch (token->value[0])
+        {
+        case '>':
+            token->type = TOK_GT;
+            break;
+        case '<':
+            token->type = TOK_LT;
+            break;
+        default:
+            token->type = (token_type_t)token->value[0];
+            break;
+        }
         token->start = g_pos;
         g_pos++;
         token->end = g_pos;
@@ -395,10 +428,11 @@ size_t tokenize(char* buffer, token_t* tokens)
 bool is_binop(token_type_t type)
 {
     return type == TOK_ADD || type == TOK_SUB || type == TOK_MUL ||
-           type == TOK_DIV;
+           type == TOK_DIV || type == TOK_EQ || type == TOK_GT ||
+           type == TOK_LT;
 }
 
 bool is_constant(token_type_t type)
 {
-    return type == TOK_NUMBER;
+    return type == TOK_NUMBER || type == TOK_TRUE || type == TOK_FALSE;
 }

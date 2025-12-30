@@ -45,6 +45,10 @@ char* ast_to_string(ast_node_t type)
         return "BINOP";
     case AST_RETURN:
         return "RETURN";
+    case AST_IF:
+        return "IF";
+    case AST_TYPE:
+        return "TYPE";
     default:
         return "UNKNOWN";
     }
@@ -64,9 +68,29 @@ char* binop_to_string(ast_binop_t op)
         return "DIV";
     case BIN_EQ:
         return "EQ";
+    case BIN_GT:
+        return "GT";
+    case BIN_LT:
+        return "LT";
     default:
         return "UNKNOWN";
     }
+}
+
+char* ast_value_type_to_string(ast_value_type_t type)
+{
+    switch (type)
+    {
+    case TYPE_VOID:
+        return "void";
+    case TYPE_BOOL:
+        return "bool";
+    case TYPE_INT:
+        return "int";
+    case TYPE_STRING:
+        return "string";
+    }
+    return NULL;
 }
 
 ast* ast_new(ast_node_t type)
@@ -135,9 +159,16 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         buffer_printf(out,
                       "{\"type\": \"%s\", \"ident\": ", ast_to_string(n->type));
         ast_fmt_buf(n->data.declfn.identifier, out);
+        buffer_printf(out, ", \"ret_type\": ");
+        ast_fmt_buf(n->data.declfn.ret_type, out);
         buffer_printf(out, ", \"block\": ");
         ast_fmt_buf(n->data.declfn.block, out);
         buffer_puts(out, "}");
+        break;
+    case AST_TYPE:
+        buffer_printf(out, "{\"type\": \"%s\", \"kind\": \"%s\"}",
+                      ast_to_string(n->type),
+                      ast_value_type_to_string(n->data.type.type));
         break;
     case AST_CALL:
     {
@@ -173,6 +204,22 @@ void ast_fmt_buf(ast* n, buffer_t* out)
     case AST_RETURN:
         buffer_puts(out, "{\"type\": \"RETURN\", \"expr\": ");
         ast_fmt_buf(n->data.ret.node, out);
+        buffer_puts(out, "}");
+        break;
+    case AST_IF:
+        buffer_puts(out, "{\"type\": \"IF\", \"cond\": ");
+        ast_fmt_buf(n->data.if_stmt.condition, out);
+        buffer_puts(out, ", \"then\": ");
+        ast_fmt_buf(n->data.if_stmt.then_branch, out);
+        buffer_puts(out, ", \"else\": ");
+        if (n->data.if_stmt.else_branch)
+        {
+            ast_fmt_buf(n->data.if_stmt.else_branch, out);
+        }
+        else
+        {
+            buffer_puts(out, "null");
+        }
         buffer_puts(out, "}");
         break;
     default:
@@ -328,6 +375,14 @@ void ast_free(ast* node)
     case AST_RETURN:
         ast_free(node->data.ret.node);
         break;
+    case AST_IF:
+        ast_free(node->data.if_stmt.condition);
+        ast_free(node->data.if_stmt.then_branch);
+        if (node->data.if_stmt.else_branch)
+        {
+            ast_free(node->data.if_stmt.else_branch);
+        }
+        break;
     default:
         break;
     }
@@ -458,8 +513,22 @@ ast* parse_constant()
 {
     log_debug("Parsing constant...");
     ast* expr = ast_new(AST_CONSTANT);
-    expr->data.constant.type = TYPE_INT;
-    expr->data.constant.value = atoi(g_cur->value);
+    if (g_cur->type == TOK_NUMBER)
+    {
+        expr->data.constant.type = TYPE_INT;
+        expr->data.constant.value = atoi(g_cur->value);
+    }
+    else if (g_cur->type == TOK_TRUE || g_cur->type == TOK_FALSE)
+    {
+        expr->data.constant.type = TYPE_BOOL;
+        expr->data.constant.value = (g_cur->type == TOK_TRUE) ? 1 : 0;
+    }
+    else
+    {
+        log_error("Unsupported constant token: %s",
+                  get_token_type_string(g_cur->type));
+        exit(1);
+    }
     next();
     return expr;
 }
@@ -474,22 +543,24 @@ ast* parse_identifier()
     return expr;
 }
 
-ast_value_type_t parse_type()
+ast* parse_type()
 {
     log_debug("Parsing type...");
-    char* types[] = {"void", "int", "string"};
-    int type_count = sizeof(types) * sizeof(char);
-    bool is_valid = false;
-    for (int i = 0; i < type_count; i++)
+    ast* type = ast_new(AST_TYPE);
+    char* types[] = {"void", "bool", "int", "string"};
+    size_t type_count = sizeof(types) / sizeof(types[0]);
+    for (size_t i = 0; i < type_count; i++)
     {
         if (streq(g_cur->value, types[i]))
         {
             next();
-            return (ast_value_type_t)i;
+            type->data.type.type = (ast_value_type_t)i;
+            return type;
         }
     }
-    log_error("Invalid type '%s', wanted one of 'void', 'int', or 'string'.",
-              g_cur->value);
+    log_error(
+        "Invalid type '%s', wanted one of 'void', 'bool', 'int', or 'string'.",
+        g_cur->value);
     exit(1);
     return 0;
 }
@@ -514,6 +585,10 @@ ast* parse_factor()
     }
     else if (g_cur->type == TOK_IDENTIFIER)
     {
+        if (expect_n(TOK_L_PAREN, 1))
+        {
+            return parse_call();
+        }
         return parse_identifier();
     }
     else if (g_cur->type == TOK_L_PAREN)
@@ -553,6 +628,51 @@ ast* parse_term()
     return node;
 }
 
+static ast* parse_addition_chain()
+{
+    ast* node = parse_term();
+    while (g_cur->type == TOK_ADD || g_cur->type == TOK_SUB)
+    {
+        ast* bin = ast_new(AST_BINOP);
+        bin->data.binop.lhs = node;
+        bin->data.binop.op = (g_cur->type == TOK_ADD) ? BIN_ADD : BIN_SUB;
+        next();
+        bin->data.binop.rhs = parse_term();
+        node = bin;
+    }
+    return node;
+}
+
+static ast* parse_comparison_chain()
+{
+    ast* node = parse_addition_chain();
+    while (g_cur->type == TOK_GT || g_cur->type == TOK_LT)
+    {
+        ast* bin = ast_new(AST_BINOP);
+        bin->data.binop.lhs = node;
+        bin->data.binop.op = (g_cur->type == TOK_GT) ? BIN_GT : BIN_LT;
+        next();
+        bin->data.binop.rhs = parse_addition_chain();
+        node = bin;
+    }
+    return node;
+}
+
+static ast* parse_equality_chain()
+{
+    ast* node = parse_comparison_chain();
+    while (g_cur->type == TOK_EQ)
+    {
+        ast* bin = ast_new(AST_BINOP);
+        bin->data.binop.lhs = node;
+        bin->data.binop.op = BIN_EQ;
+        next();
+        bin->data.binop.rhs = parse_comparison_chain();
+        node = bin;
+    }
+    return node;
+}
+
 ast* parse_string()
 {
     ast* str = ast_new(AST_STRING);
@@ -566,33 +686,7 @@ ast* parse_string()
 ast* parse_expression()
 {
     log_debug("Parsing expression...");
-
-    if (g_cur->type == TOK_IDENTIFIER && expect_n(TOK_L_PAREN, 1))
-    {
-        return parse_call();
-    }
-    // Otherwise assume the next token is a term.
-    else
-    {
-        ast* node = parse_term();
-        while (g_cur->type == TOK_ADD || g_cur->type == TOK_SUB)
-        {
-            ast* bin = ast_new(AST_BINOP);
-            bin->data.binop.lhs = node;
-            if (g_cur->type == TOK_ADD)
-            {
-                bin->data.binop.op = BIN_ADD;
-            }
-            else
-            {
-                bin->data.binop.op = BIN_SUB;
-            }
-            next();
-            bin->data.binop.rhs = parse_term();
-            node = bin;
-        }
-        return node;
-    }
+    return parse_equality_chain();
 }
 
 ast* parse_assignment()
@@ -623,7 +717,7 @@ ast* parse_assignment()
 
 ast* parse_call()
 {
-    log_info("Parsing call...");
+    log_debug("Parsing call...");
 
     ast* expr = ast_new(AST_CALL);
     expr->data.call.args = NULL;
@@ -713,9 +807,12 @@ ast* parse_declfn()
     require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
 
-    // // Parse arguments
+    // Parse arguments
     require(TOK_L_PAREN);
     next();
+
+    // TODO: Add function arguments
+
     require(TOK_R_PAREN);
     next();
 
@@ -730,6 +827,38 @@ ast* parse_declfn()
     next();
 
     expr->data.declfn.block = parse_block();
+
+    return expr;
+}
+
+ast* parse_if()
+{
+    log_debug("Parsing if...");
+
+    ast* expr = ast_new(AST_IF);
+    next(); // Skip `if`
+
+    require(TOK_L_PAREN);
+    next();
+    expr->data.if_stmt.condition = parse_expression();
+    require(TOK_R_PAREN);
+    next();
+
+    expr->data.if_stmt.then_branch = parse_block();
+    expr->data.if_stmt.else_branch = NULL;
+
+    if (expect(TOK_ELSE))
+    {
+        next();
+        if (expect(TOK_IF))
+        {
+            expr->data.if_stmt.else_branch = parse_if();
+        }
+        else
+        {
+            expr->data.if_stmt.else_branch = parse_block();
+        }
+    }
 
     return expr;
 }
@@ -759,6 +888,11 @@ ast* parse_statement()
     if (expect(TOK_RETURN))
     {
         return parse_ret();
+    }
+
+    if (expect(TOK_IF))
+    {
+        return parse_if();
     }
 
     // Parse new assignment if the next token is an
