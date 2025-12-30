@@ -47,6 +47,8 @@ char* ast_to_string(ast_node_t type)
         return "RETURN";
     case AST_IF:
         return "IF";
+    case AST_TYPE:
+        return "TYPE";
     default:
         return "UNKNOWN";
     }
@@ -73,6 +75,22 @@ char* binop_to_string(ast_binop_t op)
     default:
         return "UNKNOWN";
     }
+}
+
+char* ast_value_type_to_string(ast_value_type_t type)
+{
+    switch (type)
+    {
+    case TYPE_VOID:
+        return "void";
+    case TYPE_BOOL:
+        return "bool";
+    case TYPE_INT:
+        return "int";
+    case TYPE_STRING:
+        return "string";
+    }
+    return NULL;
 }
 
 ast* ast_new(ast_node_t type)
@@ -141,9 +159,16 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         buffer_printf(out,
                       "{\"type\": \"%s\", \"ident\": ", ast_to_string(n->type));
         ast_fmt_buf(n->data.declfn.identifier, out);
+        buffer_printf(out, ", \"ret_type\": ");
+        ast_fmt_buf(n->data.declfn.ret_type, out);
         buffer_printf(out, ", \"block\": ");
         ast_fmt_buf(n->data.declfn.block, out);
         buffer_puts(out, "}");
+        break;
+    case AST_TYPE:
+        buffer_printf(out, "{\"type\": \"%s\", \"kind\": \"%s\"}",
+                      ast_to_string(n->type),
+                      ast_value_type_to_string(n->data.type.type));
         break;
     case AST_CALL:
     {
@@ -518,9 +543,10 @@ ast* parse_identifier()
     return expr;
 }
 
-ast_value_type_t parse_type()
+ast* parse_type()
 {
     log_debug("Parsing type...");
+    ast* type = ast_new(AST_TYPE);
     char* types[] = {"void", "bool", "int", "string"};
     size_t type_count = sizeof(types) / sizeof(types[0]);
     for (size_t i = 0; i < type_count; i++)
@@ -528,7 +554,8 @@ ast_value_type_t parse_type()
         if (streq(g_cur->value, types[i]))
         {
             next();
-            return (ast_value_type_t)i;
+            type->data.type.type = (ast_value_type_t)i;
+            return type;
         }
     }
     log_error(
@@ -690,7 +717,7 @@ ast* parse_assignment()
 
 ast* parse_call()
 {
-    log_info("Parsing call...");
+    log_debug("Parsing call...");
 
     ast* expr = ast_new(AST_CALL);
     expr->data.call.args = NULL;
@@ -780,9 +807,12 @@ ast* parse_declfn()
     require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
 
-    // // Parse arguments
+    // Parse arguments
     require(TOK_L_PAREN);
     next();
+
+    // TODO: Add function arguments
+
     require(TOK_R_PAREN);
     next();
 

@@ -1,22 +1,31 @@
+fn get_true(): string =>
+{
+    return "TRUE";
+}
+fn get_false(): string =>
+{
+    return "FALSE";
+}
+
 fn main(): void =>
 {
     let count = 0;
-    if (count)
+    if (count == 1)
     {
-        printf("TRUE: %d\n", count);
+        printf("Count == 0: %s\n", get_true());
     }
     else
     {
-        printf("FALSE: %d\n", count);
+        printf("Count == 0: %s\n", get_false());
     }
     count = count + 1;
-    if (count)
+    if (count == 1)
     {
-        printf("TRUE: %d\n", count);
+        printf("Count == 1: %s\n", get_true());
     }
     else
     {
-        printf("FALSE: %d\n", count);
+        printf("Count == 1: %s\n", get_false());
     }
     return 0;
 }

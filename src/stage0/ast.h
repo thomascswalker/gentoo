@@ -60,6 +60,7 @@ typedef enum ast_binop_t
 
 char* ast_to_string(ast_node_t type);
 char* binop_to_string(ast_binop_t op);
+char* ast_value_type_to_string(ast_value_type_t type);
 
 typedef enum ast_ident_t
 {
@@ -88,7 +89,8 @@ AST_NODE(program, AST_PROP(ast**, body) AST_PROP(int, count));
 AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast_value_type_t, ret_type)
+AST_NODE(type, AST_PROP(ast_value_type_t, type));
+AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, ret_type)
                      AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
 AST_NODE(string, AST_PROP(char*, value));
@@ -98,6 +100,7 @@ AST_NODE(call, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop,
          AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
+
 AST_NODE(ret, AST_PROP(ast*, node));
 AST_NODE(if_stmt, AST_PROP(ast*, condition) AST_PROP(ast*, then_branch)
                       AST_PROP(ast*, else_branch));
@@ -128,6 +131,7 @@ struct ast
         struct ast_assign assign;
         struct ast_binop binop;
         struct ast_ret ret;
+        struct ast_type type;
         struct ast_if_stmt if_stmt;
     } data;
     size_t start;

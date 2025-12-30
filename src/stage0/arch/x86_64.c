@@ -46,9 +46,6 @@ static const char* ARG_REGISTERS[] = {RDI, RSI, RDX, RCX, R8, R9};
 static const size_t ARG_REGISTER_COUNT =
     sizeof(ARG_REGISTERS) / sizeof(ARG_REGISTERS[0]);
 
-static void emit_concat(void);
-static void x86_if(ast* node);
-
 // Concatenates two strings by allocating a new buffer for the resultant string.
 static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
 {
@@ -81,6 +78,7 @@ static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
     return dest_reg;
 }
 
+// Emits the entire concat function.
 static void emit_concat(void)
 {
     EMIT(SECTION_TEXT, "%s:\n", FN_CONCAT);
@@ -112,6 +110,8 @@ static void emit_concat(void)
     EMIT(SECTION_TEXT, "\tpop rbp\n");
     EMIT(SECTION_TEXT, "\tret\n");
 }
+
+/* Scope & Symbols */
 
 scope_t* scope_new(scope_t* parent)
 {
@@ -178,7 +178,8 @@ symbol_t* scope_lookup(scope_t* scope, const char* name)
     return NULL;
 }
 
-symbol_t* scope_add_symbol(scope_t* scope, const char* name, symbol_type_t type)
+symbol_t* scope_add_symbol(scope_t* scope, const char* name,
+                           symbol_scope_t type)
 {
     ASSERT(scope != NULL, "Scope cannot be NULL when adding a symbol.");
 
@@ -241,7 +242,7 @@ symbol_t* symbol_resolve(const char* name)
     return symbol;
 }
 
-static symbol_value_t get_symbol_value_kind(ast* node)
+symbol_value_t get_symbol_value_kind(ast* node)
 {
     if (!node)
     {
@@ -250,25 +251,68 @@ static symbol_value_t get_symbol_value_kind(ast* node)
 
     switch (node->type)
     {
-    case AST_CONSTANT:
-        switch (node->data.constant.type)
+    case AST_TYPE:
+    {
+        switch (node->data.type.type)
         {
-        case TYPE_STRING:
-            return SYMBOL_VALUE_STRING;
+        case TYPE_VOID:
+        {
+            return SYMBOL_VALUE_VOID;
+        }
         case TYPE_BOOL:
+        {
             return SYMBOL_VALUE_BOOL;
-        default:
+        }
+        case TYPE_INT:
+        {
             return SYMBOL_VALUE_INT;
         }
+        case TYPE_STRING:
+        {
+            return SYMBOL_VALUE_STRING;
+        }
+        default:
+        {
+            return SYMBOL_VALUE_INT;
+        }
+        }
+    }
+    // Constants can only be one of BOOL, INT, or STRING
+    case AST_CONSTANT:
+    {
+        switch (node->data.constant.type)
+        {
+        case TYPE_BOOL:
+        {
+            return SYMBOL_VALUE_BOOL;
+        }
+        case TYPE_STRING:
+        {
+            return SYMBOL_VALUE_STRING;
+        }
+        default:
+        {
+            return SYMBOL_VALUE_INT;
+        }
+        }
+    }
+    // Strings can only be STRING
     case AST_STRING:
+    {
         return SYMBOL_VALUE_STRING;
+    }
+    // Resolve the symbol of the identifier by its name and return the symbol's
+    // `value_kind`.
     case AST_IDENTIFIER:
     {
-        symbol_t* symbol = symbol_resolve(node->data.identifier.name);
+        char* name = node->data.identifier.name;
+        symbol_t* symbol = symbol_resolve(name);
         ASSERT(symbol->value_kind != SYMBOL_VALUE_UNKNOWN,
                "Symbol '%s' has unknown type.", symbol->name);
         return symbol->value_kind;
     }
+    // Evalutate the binary operation and determine the resulting symbol value
+    // kind.
     case AST_BINOP:
     {
         symbol_value_t lhs = get_symbol_value_kind(node->data.binop.lhs);
@@ -285,50 +329,64 @@ static symbol_value_t get_symbol_value_kind(ast* node)
         switch (node->data.binop.op)
         {
         case BIN_ADD:
+        { // Strings can only be added to strings
             if (lhs == SYMBOL_VALUE_STRING && rhs == SYMBOL_VALUE_STRING)
             {
                 return SYMBOL_VALUE_STRING;
             }
+
+            // Otherwise only allow adding ints to ints.
             ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
                    "Cannot add %s to %s.", symbol_value_to_string(lhs),
                    symbol_value_to_string(rhs));
             return SYMBOL_VALUE_INT;
+        }
         case BIN_SUB:
         case BIN_MUL:
         case BIN_DIV:
+        { // Only allow subtracting, multiplying, and dividing ints by ints.
             ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
                    "Operator %s only supports integers.",
                    binop_to_string(node->data.binop.op));
             return SYMBOL_VALUE_INT;
+        }
         case BIN_EQ:
-            if (lhs == SYMBOL_VALUE_BOOL && rhs == SYMBOL_VALUE_BOOL)
-            {
-                return SYMBOL_VALUE_BOOL;
-            }
-            ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
-                   "Equality only supports integers or booleans.");
+        {
+            ASSERT(lhs == rhs, "Equality only supports comparing same types.");
             return SYMBOL_VALUE_BOOL;
+        }
         case BIN_GT:
         case BIN_LT:
+        {
             ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
                    "Operator %s only supports integers.",
                    binop_to_string(node->data.binop.op));
             return SYMBOL_VALUE_BOOL;
+        }
         default:
+        {
             break;
+        }
         }
         break;
     }
+    // Return the function's return type
     case AST_CALL:
-        return SYMBOL_VALUE_INT;
+    {
+        symbol_t* symbol =
+            symbol_resolve(node->data.call.identifier->data.identifier.name);
+        return symbol->ret_kind;
+    }
     default:
+    {
         break;
     }
+    }
 
-    return SYMBOL_VALUE_INT;
+    return SYMBOL_VALUE_UNKNOWN;
 }
 
-void get_global_symbols(ast* node)
+void x86_globals(ast* node)
 {
     if (!node)
     {
@@ -385,6 +443,8 @@ void get_global_symbols(ast* node)
         }
     }
 }
+
+/* Emitters */
 
 void x86_epilogue(bool returns)
 {
@@ -549,7 +609,21 @@ void x86_declfn(ast* node)
 {
     ENTER(DECLFN);
 
+    // Get the function name
     char* name = node->data.declfn.identifier->data.identifier.name;
+
+    // Define a new global symbol if it's not found
+    symbol_t* symbol = scope_lookup_shallow(g_global_scope, name);
+    if (!symbol)
+    {
+        symbol = symbol_define_global(name);
+        symbol->ret_kind = get_symbol_value_kind(node->data.declfn.ret_type);
+    }
+    else
+    {
+        log_error("Symbol %s already defined.", name);
+        exit(1);
+    }
 
     bool prev_in_function = g_in_function;
     ptrdiff_t prev_stack_offset = g_stack_offset;
@@ -641,7 +715,7 @@ void x86_assign(ast* node)
     EXIT(ASSIGN);
 }
 
-static void x86_if(ast* node)
+void x86_if(ast* node)
 {
     ENTER(IF);
     ASSERT(node->type == AST_IF, "Expected IF node, got %s",
@@ -939,7 +1013,7 @@ void x86_program(ast* node)
     g_branch_counter = 0;
 
     // Collect all global symbols prior to emitting any code.
-    get_global_symbols(node);
+    x86_globals(node);
 
     // Make all symbol references RIP-relative by default
     // https://www.nasm.us/doc/nasm08.html#section-8.2.1
