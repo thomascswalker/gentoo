@@ -27,6 +27,7 @@ typedef enum ast_node_t
     AST_DECLFN,
     AST_ASSIGN,
     AST_RETURN,
+    AST_IF,
 
     // Expressions
     AST_IDENTIFIER,
@@ -40,6 +41,7 @@ typedef enum ast_node_t
 typedef enum ast_value_type_t
 {
     TYPE_VOID,
+    TYPE_BOOL,
     TYPE_INT,
     TYPE_STRING,
 } ast_value_type_t;
@@ -52,6 +54,8 @@ typedef enum ast_binop_t
     BIN_MUL,
     BIN_DIV,
     BIN_EQ,
+    BIN_GT,
+    BIN_LT,
 } ast_binop_t;
 
 char* ast_to_string(ast_node_t type);
@@ -95,6 +99,8 @@ AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
 AST_NODE(binop,
          AST_PROP(ast*, lhs) AST_PROP(ast*, rhs) AST_PROP(ast_binop_t, op));
 AST_NODE(ret, AST_PROP(ast*, node));
+AST_NODE(if_stmt, AST_PROP(ast*, condition) AST_PROP(ast*, then_branch)
+                      AST_PROP(ast*, else_branch));
 
 #undef PAD
 #undef AST_PROP
@@ -122,6 +128,7 @@ struct ast
         struct ast_assign assign;
         struct ast_binop binop;
         struct ast_ret ret;
+        struct ast_if_stmt if_stmt;
     } data;
     size_t start;
     size_t end;
@@ -148,6 +155,7 @@ ast* parse_call();
 ast* parse_declvar();
 ast* parse_declfn();
 ast* parse_ret();
+ast* parse_if();
 ast* parse_statement();
 ast* parse_block();
 ast* parse_body();

@@ -23,6 +23,7 @@ typedef enum symbol_value_t
 {
     SYMBOL_VALUE_UNKNOWN,
     SYMBOL_VALUE_INT,
+    SYMBOL_VALUE_BOOL,
     SYMBOL_VALUE_STRING,
 } symbol_value_t;
 
@@ -42,6 +43,8 @@ static char* symbol_value_to_string(symbol_value_t kind)
     {
     case SYMBOL_VALUE_INT:
         return "INT";
+    case SYMBOL_VALUE_BOOL:
+        return "BOOL";
     case SYMBOL_VALUE_STRING:
         return "STRING";
     case SYMBOL_VALUE_UNKNOWN:

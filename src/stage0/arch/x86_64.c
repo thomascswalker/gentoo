@@ -40,12 +40,14 @@ scope_t* g_global_scope = NULL;
 ptrdiff_t g_stack_offset = 0;
 int g_string_count = 0;
 bool g_concat_helper_emitted = false;
+static int g_branch_counter = 0;
 
 static const char* ARG_REGISTERS[] = {RDI, RSI, RDX, RCX, R8, R9};
 static const size_t ARG_REGISTER_COUNT =
     sizeof(ARG_REGISTERS) / sizeof(ARG_REGISTERS[0]);
 
 static void emit_concat(void);
+static void x86_if(ast* node);
 
 // Concatenates two strings by allocating a new buffer for the resultant string.
 static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
@@ -249,11 +251,15 @@ static symbol_value_t get_symbol_value_kind(ast* node)
     switch (node->type)
     {
     case AST_CONSTANT:
-        if (node->data.constant.type == TYPE_STRING)
+        switch (node->data.constant.type)
         {
+        case TYPE_STRING:
             return SYMBOL_VALUE_STRING;
+        case TYPE_BOOL:
+            return SYMBOL_VALUE_BOOL;
+        default:
+            return SYMBOL_VALUE_INT;
         }
-        return SYMBOL_VALUE_INT;
     case AST_STRING:
         return SYMBOL_VALUE_STRING;
     case AST_IDENTIFIER:
@@ -290,11 +296,24 @@ static symbol_value_t get_symbol_value_kind(ast* node)
         case BIN_SUB:
         case BIN_MUL:
         case BIN_DIV:
-        case BIN_EQ:
             ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
                    "Operator %s only supports integers.",
                    binop_to_string(node->data.binop.op));
             return SYMBOL_VALUE_INT;
+        case BIN_EQ:
+            if (lhs == SYMBOL_VALUE_BOOL && rhs == SYMBOL_VALUE_BOOL)
+            {
+                return SYMBOL_VALUE_BOOL;
+            }
+            ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
+                   "Equality only supports integers or booleans.");
+            return SYMBOL_VALUE_BOOL;
+        case BIN_GT:
+        case BIN_LT:
+            ASSERT(lhs == SYMBOL_VALUE_INT && rhs == SYMBOL_VALUE_INT,
+                   "Operator %s only supports integers.",
+                   binop_to_string(node->data.binop.op));
+            return SYMBOL_VALUE_BOOL;
         default:
             break;
         }
@@ -458,9 +477,42 @@ char* x86_binop(ast* node)
         break;
     }
     case BIN_DIV:
-    case BIN_EQ:
         ASSERT(false, "BINOP %s not implemented yet.",
                binop_to_string(binop->op));
+        break;
+    case BIN_EQ:
+    case BIN_GT:
+    case BIN_LT:
+    {
+        const char* condition = NULL;
+        if (binop->op == BIN_EQ)
+        {
+            condition = "cmove";
+        }
+        else if (binop->op == BIN_GT)
+        {
+            condition = "cmovg";
+        }
+        else
+        {
+            condition = "cmovl";
+        }
+
+        EMIT(SECTION_TEXT, "\tcmp %s, %s\n", lhs, rhs);
+        // Release rhs
+        register_unlock();
+        // Release lhs
+        register_unlock();
+
+        EMIT(SECTION_TEXT, "\tmov %s, 0\n", out_reg);
+        char* true_reg = register_lock();
+        ASSERT(true_reg != NULL,
+               "Unable to allocate register for comparison result.");
+        EMIT(SECTION_TEXT, "\tmov %s, 1\n", true_reg);
+        EMIT(SECTION_TEXT, "\t%s %s, %s\n", condition, out_reg, true_reg);
+        register_unlock();
+        break;
+    }
     default:
         break;
     }
@@ -587,6 +639,54 @@ void x86_assign(ast* node)
     }
 
     EXIT(ASSIGN);
+}
+
+static void x86_if(ast* node)
+{
+    ENTER(IF);
+    ASSERT(node->type == AST_IF, "Expected IF node, got %s",
+           ast_to_string(node->type));
+
+    ast_if_stmt* stmt = &node->data.if_stmt;
+    int label_id = g_branch_counter++;
+
+    char* cond_reg = x86_expr(stmt->condition);
+    char* else_label = NULL;
+    char* end_label = formats(".Lendif_%d", label_id);
+
+    EMIT(SECTION_TEXT, "\tcmp %s, 0\n", cond_reg);
+    if (stmt->else_branch)
+    {
+        else_label = formats(".Lelse_%d", label_id);
+        EMIT(SECTION_TEXT, "\tje %s\n", else_label);
+    }
+    else
+    {
+        EMIT(SECTION_TEXT, "\tje %s\n", end_label);
+    }
+
+    if (stmt->condition->type != AST_CALL)
+    {
+        register_unlock();
+    }
+
+    x86_statement(stmt->then_branch);
+
+    if (stmt->else_branch)
+    {
+        EMIT(SECTION_TEXT, "\tjmp %s\n", end_label);
+        EMIT(SECTION_TEXT, "%s:\n", else_label);
+        x86_statement(stmt->else_branch);
+    }
+
+    EMIT(SECTION_TEXT, "%s:\n", end_label);
+
+    free(end_label);
+    if (else_label)
+    {
+        free(else_label);
+    }
+    EXIT(IF);
 }
 
 void x86_return(ast* node)
@@ -803,6 +903,9 @@ void x86_statement(ast* node)
     case AST_CALL:
         x86_call(node);
         break;
+    case AST_IF:
+        x86_if(node);
+        break;
     default:
         break;
     }
@@ -833,6 +936,7 @@ void x86_program(ast* node)
     g_scope = g_global_scope;
     g_in_function = false;
     g_stack_offset = 0;
+    g_branch_counter = 0;
 
     // Collect all global symbols prior to emitting any code.
     get_global_symbols(node);
