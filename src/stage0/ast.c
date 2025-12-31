@@ -979,6 +979,21 @@ ast* parse_for()
     return stmt;
 }
 
+ast* parse_while()
+{
+    log_debug("Parsing while statement...");
+
+    consume(TOK_WHILE);
+
+    ast* stmt = ast_new(AST_WHILE);
+    consume(TOK_L_PAREN);
+    stmt->data.while_stmt.condition = parse_expression();
+    consume(TOK_R_PAREN);
+    stmt->data.while_stmt.block = parse_block();
+
+    return stmt;
+}
+
 ast* parse_ret()
 {
     consume(TOK_RETURN);
@@ -1020,6 +1035,11 @@ ast* parse_statement()
     if (expect(TOK_FOR))
     {
         return parse_for();
+    }
+
+    if (expect(TOK_WHILE))
+    {
+        return parse_while();
     }
 
     // Parse new assignment if the next token is an

@@ -114,8 +114,6 @@ static void x86_bind_function_args(ast* block_node)
     g_ctx.pending_function = NULL;
 }
 
-// Concatenates two runtime strings via the shared helper, returning a register
-// that holds the newly allocated buffer address.
 static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
 {
     ENTER(STR_CONCAT);
@@ -147,8 +145,6 @@ static char* x86_concat_strings(ast* lhs_node, ast* rhs_node)
     return dest_reg;
 }
 
-// Emits the helper function that performs heap-allocated string concatenation
-// so user code can rely on one implementation.
 static void emit_concat(void)
 {
     EMIT(SECTION_TEXT, "%s:\n", FN_CONCAT);
@@ -191,8 +187,6 @@ static void emit_concat(void)
 
 /* Scope & Symbols */
 
-// Allocates a new scope chained to the provided parent, pre-sizing symbol
-// storage so we can push locals efficiently while recursing through blocks.
 scope_t* scope_new(scope_t* parent)
 {
     scope_t* scope = (scope_t*)calloc(1, sizeof(scope_t));
@@ -204,7 +198,6 @@ scope_t* scope_new(scope_t* parent)
     return scope;
 }
 
-// Releases the memory associated with a scope; used when unwinding blocks.
 void scope_free(scope_t* scope)
 {
     if (!scope)
@@ -216,8 +209,6 @@ void scope_free(scope_t* scope)
     free(scope);
 }
 
-// Creates a child scope of the current scope, establishing isolation for
-// nested blocks.
 void scope_push()
 {
     ASSERT(g_ctx.current_scope != NULL, "Cannot push scope with no parent.");
@@ -226,8 +217,6 @@ void scope_push()
     g_ctx.current_scope = scope_new(g_ctx.current_scope);
 }
 
-// Pops the current scope and returns control to its parent, freeing all local
-// symbol metadata allocated for that lexical block.
 void scope_pop()
 {
     ASSERT(g_ctx.current_scope != NULL, "No scope to pop.");
@@ -238,8 +227,6 @@ void scope_pop()
     scope_free(current);
 }
 
-// Finds a symbol only within the provided scope; callers use this to avoid
-// shadowing collisions when declaring new bindings.
 symbol_t* scope_lookup_shallow(scope_t* scope, const char* name)
 {
     if (!scope)
@@ -258,8 +245,6 @@ symbol_t* scope_lookup_shallow(scope_t* scope, const char* name)
     return NULL;
 }
 
-// Walks parent scopes outward until it finds a symbol by name, mirroring how
-// the runtime would resolve identifiers.
 symbol_t* scope_lookup(scope_t* scope, const char* name)
 {
     scope_t* current = scope;
@@ -277,8 +262,6 @@ symbol_t* scope_lookup(scope_t* scope, const char* name)
     return NULL;
 }
 
-// Adds a symbol of the given scope type, expanding storage as necessary and
-// logging the result for easier debugging of symbol lifetimes.
 symbol_t* scope_add_symbol(scope_t* scope, const char* name,
                            symbol_scope_t type)
 {
@@ -308,8 +291,6 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name,
     return symbol;
 }
 
-// Reserves eight bytes on the stack for a local value and returns its offset
-// relative to RBP so loads and stores can reference it.
 ptrdiff_t allocate_stack_slot()
 {
     ASSERT(g_ctx.in_function,
@@ -321,8 +302,6 @@ ptrdiff_t allocate_stack_slot()
     return -g_ctx.stack_offset;
 }
 
-// Declares a new global symbol and asserts no duplicate exists at the module
-// scope.
 symbol_t* symbol_define_global(const char* name)
 {
     ASSERT(g_ctx.global_scope != NULL, "Global scope is not initialized.");
@@ -333,8 +312,6 @@ symbol_t* symbol_define_global(const char* name)
     return scope_add_symbol(g_ctx.global_scope, name, SYMBOL_GLOBAL);
 }
 
-// Creates a local symbol inside the current function scope and hands back the
-// reserved stack slot.
 symbol_t* symbol_define_local(const char* name)
 {
     ASSERT(g_ctx.current_scope != NULL, "Current scope is not set.");
@@ -350,8 +327,6 @@ symbol_t* symbol_define_local(const char* name)
     return symbol;
 }
 
-// Resolves an identifier to a previously declared symbol, enforcing that any
-// use must have been defined earlier in scope search order.
 symbol_t* symbol_resolve(const char* name)
 {
     // Walk outward through scopes (starting from current) until a declaration
@@ -362,8 +337,6 @@ symbol_t* symbol_resolve(const char* name)
     return symbol;
 }
 
-// Infers the static value type represented by the AST node so type checks can
-// enforce valid operations (e.g., string concatenation) before emitting code.
 symbol_value_t get_symbol_value_type(ast* node)
 {
     if (!node)
@@ -506,8 +479,6 @@ symbol_value_t get_symbol_value_type(ast* node)
     return SYMBOL_VALUE_UNKNOWN;
 }
 
-// Scans the program before emission to discover globals and infer their types
-// so subsequent references know each symbol's storage class.
 void x86_globals(ast* node)
 {
     if (!node)
@@ -573,8 +544,6 @@ void x86_globals(ast* node)
 
 /* Emitters */
 
-// Restores the caller's stack frame and optionally emits a `ret`, shared by
-// normal returns and synthesized epilogues.
 void x86_epilogue(bool returns)
 {
     // Tear down this stack frame so the caller regains ownership of RSP/RBP.
@@ -589,7 +558,6 @@ void x86_epilogue(bool returns)
     }
 }
 
-// Establishes the standard System V stack frame for a function entry.
 void x86_prologue()
 {
     // Save the caller's RBP and anchor a fresh base pointer at the current SP.
@@ -597,14 +565,12 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-// Emits a simple comment line.
 void x86_comment(char* text)
 {
     // Comments are prefixed with ';' in NASM syntax.
     EMIT(SECTION_TEXT, "; %s\n", text);
 }
 
-// Emits a Linux syscall invocation with the provided code in RAX.
 void x86_syscall(int code)
 {
     // System V ABI expects the syscall number in RAX before invoking `syscall`.
@@ -612,8 +578,6 @@ void x86_syscall(int code)
     EMIT(SECTION_TEXT, "\tsyscall\n");
 }
 
-// Low-level emitter for arithmetic and comparison expressions; evaluates both
-// operands, enforces type rules, then writes the machine operations.
 char* x86_binop(ast* node)
 {
     ENTER(BINOP);
@@ -726,7 +690,6 @@ char* x86_binop(ast* node)
     return out_reg;
 }
 
-// Emits storage for a global variable declaration in the data section.
 void x86_declvar(ast* node)
 {
     ENTER(DECLVAR);
@@ -736,8 +699,6 @@ void x86_declvar(ast* node)
     EXIT(DECLVAR);
 }
 
-// Executes each statement in a lexical block while creating a nested scope for
-// locals introduced inside the block.
 void x86_block(ast* node)
 {
     ASSERT(node->type == AST_BLOCK, "Expected BLOCK node, got %s",
@@ -757,8 +718,6 @@ void x86_block(ast* node)
     scope_pop();
 }
 
-// Emits a function: records its symbol, sets up a new frame, runs the body,
-// and restores the previous emission state afterward.
 void x86_declfn(ast* node)
 {
     ENTER(DECLFN);
@@ -823,9 +782,6 @@ void x86_declfn(ast* node)
     EXIT(DECLFN);
 }
 
-// Handles both declarations and reassignments by resolving the destination,
-// type-checking the expression, and storing the value either globally or on
-// the current stack frame.
 void x86_assign(ast* node)
 {
     ENTER(ASSIGN);
@@ -903,8 +859,6 @@ void x86_assign(ast* node)
     EXIT(ASSIGN);
 }
 
-// Implements `if` / `else` branching by emitting labels and conditional jumps
-// based on the evaluated condition register.
 void x86_if(ast* node)
 {
     ENTER(IF);
@@ -957,8 +911,52 @@ void x86_if(ast* node)
     EXIT(IF);
 }
 
-// Validates return types against the enclosing signature and moves the value
-// into RAX before emitting the shared epilogue.
+void x86_while(ast* node)
+{
+    ENTER(WHILE);
+    log_info("Emitting WHILE loop...");
+    ASSERT(node->type == AST_WHILE, "Expected WHILE node, got %s",
+           ast_to_string(node->type));
+
+    ast_while_stmt* stmt = &node->data.while_stmt;
+
+    // Construct new start and end labels for this while block
+    int label_id = g_ctx.branch_count++;
+    char* start_label = formats(".Lwhile_begin_%d", label_id);
+    char* end_label = formats(".Lwhile_end_%d", label_id);
+
+    EMIT(SECTION_TEXT, "%s:\n", start_label);
+
+    // Evaluate the expression
+    char* cond_reg = x86_expr(stmt->condition);
+
+    // Does the expression evaluate true?
+    EMIT(SECTION_TEXT, "\tcmp %s, 0\n", cond_reg);
+
+    //
+    if (stmt->condition->type != AST_CALL)
+    {
+        register_unlock();
+    }
+
+    // If true, jump to the end label
+    EMIT(SECTION_TEXT, "\tje %s\n", end_label);
+
+    // Emit the block
+    x86_statement(stmt->block);
+
+    // At the end of the block, jump back to the condition
+    EMIT(SECTION_TEXT, "\tjmp %s\n", start_label);
+
+    // Emit the end label (continue beyond the while statement)
+    EMIT(SECTION_TEXT, "%s:\n", end_label);
+
+    free(start_label);
+    free(end_label);
+
+    EXIT(WHILE);
+}
+
 void x86_return(ast* node)
 {
     ENTER(RET);
@@ -1024,8 +1022,6 @@ void x86_return(ast* node)
     EXIT(RET);
 }
 
-// Evaluates call arguments, marshals them into ABI-defined registers/stack
-// slots, issues the call, and leaves the result in RAX.
 char* x86_call(ast* node)
 {
     ENTER(CALL);
@@ -1084,8 +1080,6 @@ char* x86_call(ast* node)
     return reg;
 }
 
-// Emits a unique global label for the string literal and returns that symbol
-// so expressions can reference it.
 char* x86_string(char* text)
 {
     // Create a new buffer for the line we're going to format. This is to
@@ -1133,8 +1127,6 @@ char* x86_string(char* text)
     return string_name;
 }
 
-// Dispatches expression nodes to their specialized emitters and ensures the
-// final value resides in a register for downstream instructions.
 char* x86_expr(ast* node)
 {
     ENTER(EXPR);
@@ -1192,8 +1184,6 @@ char* x86_expr(ast* node)
     return reg;
 }
 
-// Switchboard for statement-level nodes, ensuring each high-level construct
-// routes to the correct emitter.
 void x86_statement(ast* node)
 {
     ENTER(STMT);
@@ -1218,14 +1208,15 @@ void x86_statement(ast* node)
     case AST_IF:
         x86_if(node);
         break;
+    case AST_WHILE:
+        x86_while(node);
+        break;
     default:
         break;
     }
     EXIT(STMT);
 }
 
-// Emits every statement within a top-level body; bodies correspond to the
-// root sequences under `program`.
 void x86_body(ast* node)
 {
     ASSERT(node->type == AST_BODY, "Wanted node type BODY, got %s", node->type);
@@ -1239,8 +1230,6 @@ void x86_body(ast* node)
     EXIT(BODY);
 }
 
-// Entry point for the backend: reinitializes global state, gathers globals,
-// primes the assembly sections, and emits each top-level body.
 void x86_program(ast* node)
 {
     ASSERT(node->type == AST_PROGRAM, "Wanted node type PROGRAM, got %s",

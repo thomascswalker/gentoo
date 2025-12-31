@@ -147,6 +147,7 @@ void x86_statement(ast* node);
 void x86_block(ast* node);
 char* x86_binop(ast* node);
 void x86_if(ast* node);
+void x86_while(ast* node);
 void x86_declfn(ast* node);
 void x86_declvar(ast* node);
 void x86_assign(ast* node);
