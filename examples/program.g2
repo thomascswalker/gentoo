@@ -1,9 +1,38 @@
-fn main() =>
+fn get_count(): int =>
 {
-    let fox = "fox";
-    let dog = "dog";
-    let sentence = "The quick brown " + fox + " jumped over the lazy " + dog;
-    printf(sentence + "\n");
-    printf("Something else!");
+    return 1;
+}
+
+fn get_true(): string =>
+{
+    return "TRUE";
+}
+
+
+fn get_false(): string =>
+{
+    return "FALSE";
+}
+
+fn main(): int =>
+{
+    let count = get_count();
+    if (count == 1)
+    {
+        printf("Count == 1: %s\n", get_true());
+    }
+    else
+    {
+        printf("Count == 1: %s\n", get_false());
+    }
+    count = count + 1;
+    if (count == 1)
+    {
+        printf("Count == 1: %s\n", get_true());
+    }
+    else
+    {
+        printf("Count == 1: %s\n", get_false());
+    }
     return 0;
 }

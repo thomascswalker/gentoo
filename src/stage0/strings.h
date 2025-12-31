@@ -1,8 +1,14 @@
 #ifndef STRINGS_H
 #define STRINGS_H
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+static bool streq(char* str1, char* str2)
+{
+    return strcmp(str1, str2) == 0;
+}
 
 static char* strjoin(char* buf, size_t* cap, const char* piece,
                      int prepend_comma)
