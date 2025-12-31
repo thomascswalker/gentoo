@@ -31,8 +31,6 @@ char* ast_to_string(ast_node_t type)
         return "IDENTIFIER";
     case AST_CONSTANT:
         return "CONSTANT";
-    case AST_STRING:
-        return "STRING";
     case AST_DECLVAR:
         return "DECLVAR";
     case AST_DECLFN:
@@ -100,7 +98,6 @@ ast* ast_new(ast_node_t type)
     return node;
 }
 
-// Implementation
 void ast_fmt_buf(ast* n, buffer_t* out)
 {
     switch (n->type)
@@ -141,12 +138,19 @@ void ast_fmt_buf(ast* n, buffer_t* out)
                       ast_to_string(n->type), n->data.identifier.name);
         break;
     case AST_CONSTANT:
-        buffer_printf(out, "{\"type\": \"%s\", \"value\": %d}",
-                      ast_to_string(n->type), n->data.constant.value);
-        break;
-    case AST_STRING:
-        buffer_printf(out, "{\"type\": \"%s\", \"value\": %s}",
-                      ast_to_string(n->type), n->data.string.value);
+        if (n->data.constant.type == TYPE_STRING)
+        {
+            const char* value = n->data.constant.string_value
+                                    ? n->data.constant.string_value
+                                    : "null";
+            buffer_printf(out, "{\"type\": \"%s\", \"value\": %s}",
+                          ast_to_string(n->type), value);
+        }
+        else
+        {
+            buffer_printf(out, "{\"type\": \"%s\", \"value\": %d}",
+                          ast_to_string(n->type), n->data.constant.value);
+        }
         break;
     case AST_DECLVAR:
         buffer_printf(out,
@@ -348,8 +352,13 @@ void ast_free(ast* node)
     case AST_IDENTIFIER:
         free(node->data.identifier.name);
         break;
-    case AST_STRING:
-        free(node->data.string.value);
+    case AST_CONSTANT:
+        if (node->data.constant.type == TYPE_STRING &&
+            node->data.constant.string_value)
+        {
+            free(node->data.constant.string_value);
+            node->data.constant.string_value = NULL;
+        }
         break;
     case AST_CALL:
         if (node->data.call.args)
@@ -494,11 +503,6 @@ void require_n(token_type_t type, size_t offset)
     log_debug("Found %s", get_token_type_string((g_cur + offset)->type));
 }
 
-bool can_continue()
-{
-    return g_cur != NULL && g_cur->type != 0;
-}
-
 /* Move to the next token to parse. */
 void next()
 {
@@ -508,20 +512,54 @@ void next()
               g_cur->value);
 }
 
+/**
+ * Require the specified token type, consuming it and moving to the next
+ * token to parse.
+ */
+void consume(token_type_t type)
+{
+    require(type);
+    next();
+}
+
+/**
+ * Can we continue parsing? Is the current token either NULL or the current
+ * token's type is NULL?
+ */
+bool can_continue()
+{
+    return g_cur != NULL && g_cur->type != 0;
+}
+
 /* Parse a constant (literal) value (5, "string", 4.3234, etc.). */
 ast* parse_constant()
 {
     log_debug("Parsing constant...");
     ast* expr = ast_new(AST_CONSTANT);
-    if (g_cur->type == TOK_NUMBER)
+    expr->data.constant.value = 0;
+    expr->data.constant.string_value = NULL;
+    expr->start = g_cur->start;
+    expr->end = g_cur->end;
+
+    if (expect(TOK_NUMBER))
     {
         expr->data.constant.type = TYPE_INT;
         expr->data.constant.value = atoi(g_cur->value);
     }
-    else if (g_cur->type == TOK_TRUE || g_cur->type == TOK_FALSE)
+    else if (expect(TOK_TRUE) || expect(TOK_FALSE))
     {
         expr->data.constant.type = TYPE_BOOL;
-        expr->data.constant.value = (g_cur->type == TOK_TRUE) ? 1 : 0;
+        expr->data.constant.value = (expect(TOK_TRUE)) ? 1 : 0;
+    }
+    else if (expect(TOK_STRING))
+    {
+        expr->data.constant.type = TYPE_STRING;
+        expr->data.constant.string_value = strdup(g_cur->value);
+        if (!expr->data.constant.string_value)
+        {
+            log_error("Out of memory duplicating string literal.");
+            exit(1);
+        }
     }
     else
     {
@@ -537,66 +575,68 @@ ast* parse_constant()
 ast* parse_identifier()
 {
     log_debug("Parsing identifier...");
+    require(TOK_IDENTIFIER);
     ast* expr = ast_new(AST_IDENTIFIER);
     expr->data.identifier.name = strdup(g_cur->value);
     next();
     return expr;
 }
 
+/* Parses a type, matching exactly a value within `TYPES`.*/
 ast* parse_type()
 {
     log_debug("Parsing type...");
-    ast* type = ast_new(AST_TYPE);
-    char* types[] = {"void", "bool", "int", "string"};
-    size_t type_count = sizeof(types) / sizeof(types[0]);
-    for (size_t i = 0; i < type_count; i++)
+
+    for (size_t i = 0; i < TYPE_COUNT; i++)
     {
-        if (streq(g_cur->value, types[i]))
+        if (streq(g_cur->value, TYPES[i]))
         {
             next();
+            ast* type = ast_new(AST_TYPE);
             type->data.type.type = (ast_value_type_t)i;
             return type;
         }
     }
-    log_error(
-        "Invalid type '%s', wanted one of 'void', 'bool', 'int', or 'string'.",
-        g_cur->value);
+    size_t capacity = 0;
+    char* types_list = NULL;
+    for (size_t i = 0; i < TYPE_COUNT; i++)
+    {
+        types_list = strjoin(types_list, &capacity, TYPES[i], i > 0);
+    }
+    log_error("Invalid type '%s', wanted one of %s.", g_cur->value,
+              types_list ? types_list : "<unknown>");
+    free(types_list);
     exit(1);
     return 0;
 }
 
 /**
- * Parse a one of the below types.
- *
- *   - Literal (number, string, boolean, etc.)
- *   - Identifier (variable or constant)
- *   - Parenthesis expression: '(' expression ')'
- *   - Unary/prefix operator applied to a factor (e.g., +, -, !)
+ * Parse one of: constants (literals), calls, identifiers, parenthesis
+ * expressions.
  */
 ast* parse_factor()
 {
+    // Parse a constant, e.g. `1` or `true` or `"string"`
     if (is_constant(g_cur->type))
     {
         return parse_constant();
     }
-    if (g_cur->type == TOK_STRING)
+    // Parse a function call: `func()`
+    if (expect(TOK_IDENTIFIER) && expect_n(TOK_L_PAREN, 1))
     {
-        return parse_string();
+        return parse_call();
     }
-    else if (g_cur->type == TOK_IDENTIFIER)
+    // Parse a normal identifier: `name`
+    if (expect(TOK_IDENTIFIER))
     {
-        if (expect_n(TOK_L_PAREN, 1))
-        {
-            return parse_call();
-        }
         return parse_identifier();
     }
-    else if (g_cur->type == TOK_L_PAREN)
+    // Parse a parenthesis-wrapped expression: `( ... )`
+    if (expect(TOK_L_PAREN))
     {
         next();
         ast* expr = parse_expression();
-        require(TOK_R_PAREN);
-        next();
+        consume(TOK_R_PAREN);
         return expr;
     }
     log_context();
@@ -673,16 +713,6 @@ static ast* parse_equality_chain()
     return node;
 }
 
-ast* parse_string()
-{
-    ast* str = ast_new(AST_STRING);
-    str->data.string.value = strdup(g_cur->value);
-    str->start = g_cur->start;
-    str->end = g_cur->end;
-    next();
-    return str;
-}
-
 ast* parse_expression()
 {
     log_debug("Parsing expression...");
@@ -696,21 +726,15 @@ ast* parse_assignment()
     ast* expr = ast_new(AST_ASSIGN);
 
     // Require a valid identifier
-    require(TOK_IDENTIFIER);
-    ast* ident = ast_new(AST_IDENTIFIER);
-    ident->data.identifier.name = strdup(g_cur->value);
-    expr->data.assign.lhs = ident;
-    next();
+    expr->data.assign.lhs = parse_identifier();
 
     // Require an assignment operator `=`
-    require(TOK_ASSIGN);
-    next();
+    consume(TOK_ASSIGN);
 
     // Assume the only valid variable type is integer.
     expr->data.assign.rhs = parse_expression();
 
-    require(TOK_SEMICOLON);
-    next();
+    consume(TOK_SEMICOLON);
 
     return expr;
 }
@@ -722,17 +746,14 @@ ast* parse_call()
     ast* expr = ast_new(AST_CALL);
     expr->data.call.args = NULL;
     expr->data.call.count = 0;
+    expr->data.call.identifier = parse_identifier();
 
-    require(TOK_IDENTIFIER);
-    ast* ident = ast_new(AST_IDENTIFIER);
-    ident->data.identifier.name = strdup(g_cur->value);
-    expr->data.call.identifier = ident;
-    next();
-
-    require(TOK_L_PAREN);
-    next();
+    consume(TOK_L_PAREN);
 
     size_t capacity = 0;
+
+    // Parse arguments if the parenthesis are not immediately closed
+    // e.g. ( ... ) as opposed to ()
     if (!expect(TOK_R_PAREN))
     {
         capacity = 4;
@@ -747,7 +768,7 @@ ast* parse_call()
             }
             expr->data.call.args[expr->data.call.count++] = parse_expression();
 
-            if (g_cur->type == TOK_COMMA)
+            if (expect(TOK_COMMA))
             {
                 next();
                 continue;
@@ -756,12 +777,12 @@ ast* parse_call()
         }
     }
 
-    require(TOK_R_PAREN);
-    next();
+    consume(TOK_R_PAREN);
 
     return expr;
 }
 
+/* */
 ast* parse_declvar()
 {
     log_debug("Parsing new assignment...");
@@ -769,108 +790,110 @@ ast* parse_declvar()
     ast* expr = ast_new(AST_ASSIGN);
 
     // Assume we're assigning to a new variable.
-    require(TOK_DECLVAR);
+    consume(TOK_DECLVAR);
     ast* declvar = ast_new(AST_DECLVAR);
-    bool is_const = strcmp(g_cur->value, "const") == 0;
-    declvar->data.declvar.is_const = is_const;
-    next();
+    declvar->data.declvar.is_const = false;
+    expr->data.assign.lhs = declvar;
 
     // Require a valid identifier
-    require(TOK_IDENTIFIER);
-    ast* ident = ast_new(AST_IDENTIFIER);
-    ident->data.identifier.name = strdup(g_cur->value);
+    ast* ident = parse_identifier();
     declvar->data.declvar.identifier = ident;
-    expr->data.assign.lhs = declvar;
-    next();
 
     // Require an assignment operator `=`
-    require(TOK_ASSIGN);
-    next();
+    consume(TOK_ASSIGN);
 
     // Assume the only valid variable type is integer.
     expr->data.assign.rhs = parse_expression();
 
-    require(TOK_SEMICOLON);
-    next();
+    consume(TOK_SEMICOLON);
 
     return expr;
 }
 
+/* `fn identifier(arguments...): type => { ... }` */
 ast* parse_declfn()
 {
     log_debug("Parsing declfn...");
-    next(); // Skip `fn`
+
+    consume(TOK_DECLFN);
 
     ast* expr = ast_new(AST_DECLFN);
-
-    // Parse the function mame
-    require(TOK_IDENTIFIER);
     expr->data.declfn.identifier = parse_identifier();
-
-    // Parse arguments
-    require(TOK_L_PAREN);
-    next();
+    consume(TOK_L_PAREN);
 
     // TODO: Add function arguments
 
-    require(TOK_R_PAREN);
-    next();
-
-    // Parse return type
-    require(TOK_COLON);
-    next();
+    consume(TOK_R_PAREN);
+    consume(TOK_COLON);
     require(TOK_IDENTIFIER);
     expr->data.declfn.ret_type = parse_type();
-
-    // Arrow
-    require(TOK_ARROW);
-    next();
+    consume(TOK_ARROW);
 
     expr->data.declfn.block = parse_block();
 
     return expr;
 }
 
+/* `if (condition) { ... } else { ... }` */
 ast* parse_if()
 {
-    log_debug("Parsing if...");
+    log_debug("Parsing if statement...");
 
-    ast* expr = ast_new(AST_IF);
-    next(); // Skip `if`
+    consume(TOK_IF);
 
-    require(TOK_L_PAREN);
-    next();
-    expr->data.if_stmt.condition = parse_expression();
-    require(TOK_R_PAREN);
-    next();
+    ast* stmt = ast_new(AST_IF);
+    consume(TOK_L_PAREN);
+    stmt->data.if_stmt.condition = parse_expression();
+    consume(TOK_R_PAREN);
 
-    expr->data.if_stmt.then_branch = parse_block();
-    expr->data.if_stmt.else_branch = NULL;
+    // Always parse THEN
+    stmt->data.if_stmt.then_branch = parse_block();
+    // ELSE is optional
+    stmt->data.if_stmt.else_branch = NULL;
 
     if (expect(TOK_ELSE))
     {
         next();
         if (expect(TOK_IF))
         {
-            expr->data.if_stmt.else_branch = parse_if();
+            stmt->data.if_stmt.else_branch = parse_if();
         }
         else
         {
-            expr->data.if_stmt.else_branch = parse_block();
+            stmt->data.if_stmt.else_branch = parse_block();
         }
     }
 
-    return expr;
+    return stmt;
+}
+
+/**
+ * `for (identifier in expression) { ... }`
+ */
+ast* parse_for()
+{
+    log_debug("Parsing for statement...");
+
+    consume(TOK_FOR);
+
+    ast* stmt = ast_new(AST_FOR);
+    consume(TOK_L_PAREN);
+    stmt->data.for_stmt.identifier = parse_identifier();
+    consume(TOK_IN);
+    stmt->data.for_stmt.expr = parse_expression();
+    consume(TOK_R_PAREN);
+    stmt->data.for_stmt.block = parse_block();
+
+    return stmt;
 }
 
 ast* parse_ret()
 {
-    ast* expr = ast_new(AST_RETURN);
-    next();
-    expr->data.ret.node = parse_expression();
+    consume(TOK_RETURN);
 
-    require(TOK_SEMICOLON);
-    next();
+    ast* expr = ast_new(AST_RETURN);
+    expr->data.ret.node = parse_expression();
+    consume(TOK_SEMICOLON);
 
     return expr;
 }
@@ -893,6 +916,11 @@ ast* parse_statement()
     if (expect(TOK_IF))
     {
         return parse_if();
+    }
+
+    if (expect(TOK_FOR))
+    {
+        return parse_for();
     }
 
     // Parse new assignment if the next token is an
@@ -918,8 +946,7 @@ ast* parse_statement()
         if (expect_n(TOK_L_PAREN, 1))
         {
             ast* call = parse_call();
-            require(TOK_SEMICOLON);
-            next();
+            consume(TOK_SEMICOLON);
             return call;
         }
 
@@ -935,8 +962,7 @@ ast* parse_block()
 {
     log_debug("Parsing block...");
 
-    require(TOK_L_BRACKET);
-    next();
+    consume(TOK_L_BRACKET);
 
     ast* expr = ast_new(AST_BLOCK);
     struct ast_block* block = &expr->data.block;
@@ -951,8 +977,7 @@ ast* parse_block()
         block->count++;
     }
 
-    require(TOK_R_BRACKET);
-    next();
+    consume(TOK_R_BRACKET);
 
     return expr;
 }

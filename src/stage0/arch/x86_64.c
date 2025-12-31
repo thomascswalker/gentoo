@@ -358,11 +358,6 @@ symbol_value_t get_symbol_value_type(ast* node)
         }
         }
     }
-    // Strings can only be STRING
-    case AST_STRING:
-    {
-        return SYMBOL_VALUE_STRING;
-    }
     // Resolve the symbol of the identifier by its name and return the symbol's
     // `value_type`.
     case AST_IDENTIFIER:
@@ -922,7 +917,6 @@ void x86_return(ast* node)
         {
         case AST_BINOP:
         case AST_CONSTANT:
-        case AST_STRING:
         case AST_IDENTIFIER:
         case AST_CALL:
             rhs_reg = x86_expr(rhs);
@@ -930,7 +924,7 @@ void x86_return(ast* node)
         default:
             ASSERT(false,
                    "Invalid right-hand type for RETURN: %d. Wanted one of "
-                   "[BINOP, CONSTANT, STRING, IDENTIFIER, CALL].",
+                   "[BINOP, CONSTANT, IDENTIFIER, CALL].",
                    rhs->type);
         }
 
@@ -1075,8 +1069,17 @@ char* x86_expr(ast* node)
     case AST_CONSTANT:
         // Get a new register to store the constant
         reg = register_lock();
-        // Move the constant into this register
-        EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg, node->data.constant.value);
+        if (node->data.constant.type == TYPE_STRING)
+        {
+            char* string_label = x86_string(node->data.constant.string_value);
+            EMIT(SECTION_TEXT, "\tlea %s, [%s]\n", reg, string_label);
+        }
+        else
+        {
+            // Move the constant into this register
+            EMIT(SECTION_TEXT, "\tmov %s, %d\n", reg,
+                 node->data.constant.value);
+        }
         break;
     case AST_IDENTIFIER:
         // Get a new register to store the identifier's value
@@ -1095,15 +1098,6 @@ char* x86_expr(ast* node)
             }
         }
         break;
-    case AST_STRING:
-    {
-        reg = register_lock();
-        // Declare a new string
-        char* string_label = x86_string(node->data.string.value);
-        // Store the result of the string into the register
-        EMIT(SECTION_TEXT, "\tlea %s, [%s]\n", reg, string_label);
-        break;
-    }
     case AST_CALL:
         reg = x86_call(node);
         break;

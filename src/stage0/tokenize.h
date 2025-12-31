@@ -20,6 +20,7 @@ typedef enum token_type_t
     TOK_IF,
     TOK_ELSE,
     TOK_FOR,
+    TOK_IN,
     TOK_WHILE,
     TOK_TRUE,
     TOK_FALSE,

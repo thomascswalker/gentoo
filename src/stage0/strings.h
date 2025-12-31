@@ -10,6 +10,11 @@ static bool streq(char* str1, char* str2)
     return strcmp(str1, str2) == 0;
 }
 
+// Append `piece` into `buf`, reallocating as needed.
+// buf: existing buffer or NULL to allocate fresh storage.
+// cap: receives current buffer capacity; updated on resize.
+// piece: chunk to append.
+// prepend_comma: when nonzero, inserts ", " before `piece` if buf has data.
 static char* strjoin(char* buf, size_t* cap, const char* piece,
                      int prepend_comma)
 {
