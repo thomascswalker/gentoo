@@ -28,13 +28,14 @@ typedef enum ast_node_t
     AST_ASSIGN,
     AST_RETURN,
     AST_IF,
+    AST_FOR,
+    AST_WHILE,
 
     // Expressions
     AST_IDENTIFIER,
     AST_TYPE,
     AST_BINOP,
     AST_CONSTANT,
-    AST_STRING,
     AST_CALL,
 } ast_node_t;
 
@@ -45,6 +46,9 @@ typedef enum ast_value_type_t
     TYPE_INT,
     TYPE_STRING,
 } ast_value_type_t;
+
+static char* TYPES[] = {"void", "bool", "int", "string"};
+static size_t TYPE_COUNT = sizeof(TYPES) / sizeof(TYPES[0]);
 
 /* Enumeration for the binary operation types. */
 typedef enum ast_binop_t
@@ -90,11 +94,12 @@ AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(type, AST_PROP(ast_value_type_t, type));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, ret_type)
-                     AST_PROP(ast*, block));
+AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
+                     AST_PROP(ast_value_type_t*, arg_types) AST_PROP(int, count)
+                         AST_PROP(ast*, ret_type) AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
-AST_NODE(string, AST_PROP(char*, value));
-AST_NODE(constant, AST_PROP(int, value) AST_PROP(ast_value_type_t, type));
+AST_NODE(constant, AST_PROP(int, value) AST_PROP(char*, string_value)
+                       AST_PROP(ast_value_type_t, type));
 AST_NODE(call, AST_PROP(ast*, identifier) AST_PROP(ast**, args)
                    AST_PROP(size_t, count));
 AST_NODE(assign, AST_PROP(ast*, lhs) AST_PROP(ast*, rhs));
@@ -104,6 +109,8 @@ AST_NODE(binop,
 AST_NODE(ret, AST_PROP(ast*, node));
 AST_NODE(if_stmt, AST_PROP(ast*, condition) AST_PROP(ast*, then_branch)
                       AST_PROP(ast*, else_branch));
+AST_NODE(for_stmt,
+         AST_PROP(ast*, identifier) AST_PROP(ast*, expr) AST_PROP(ast*, block));
 
 #undef PAD
 #undef AST_PROP
@@ -126,13 +133,13 @@ struct ast
         struct ast_declfn declfn;
         struct ast_identifier identifier;
         struct ast_constant constant;
-        struct ast_string string;
         struct ast_call call;
         struct ast_assign assign;
         struct ast_binop binop;
         struct ast_ret ret;
         struct ast_type type;
         struct ast_if_stmt if_stmt;
+        struct ast_for_stmt for_stmt;
     } data;
     size_t start;
     size_t end;
@@ -152,7 +159,6 @@ ast* parse_constant();
 ast* parse_identifier();
 ast* parse_factor();
 ast* parse_term();
-ast* parse_string();
 ast* parse_expression();
 ast* parse_assignment();
 ast* parse_call();
@@ -160,6 +166,7 @@ ast* parse_declvar();
 ast* parse_declfn();
 ast* parse_ret();
 ast* parse_if();
+ast* parse_for();
 ast* parse_statement();
 ast* parse_block();
 ast* parse_body();

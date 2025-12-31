@@ -134,6 +134,10 @@ typedef struct codegen_context
     const char* current_function_name;
     // Current function return type
     symbol_value_t expected_return_type;
+    // Has this function called return at least once?
+    bool has_returned;
+    // Pending function whose arguments need binding when entering its block
+    ast* pending_function;
 } codegen_context_t;
 
 void x86_globals(ast* node);

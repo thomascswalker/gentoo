@@ -170,43 +170,47 @@ token_t* tokenize_keyword()
     memcpy(token->value, &g_buf[g_pos], count);
     token->value[count] = 0;
 
-    if (strcmp(token->value, "const") == 0)
+    if (streq(token->value, "const"))
     {
         token->type = TOK_DECLVAR;
     }
-    else if (strcmp(token->value, "let") == 0)
+    else if (streq(token->value, "let"))
     {
         token->type = TOK_DECLVAR;
     }
-    else if (strcmp(token->value, "fn") == 0)
+    else if (streq(token->value, "fn"))
     {
         token->type = TOK_DECLFN;
     }
-    else if (strcmp(token->value, "return") == 0)
+    else if (streq(token->value, "return"))
     {
         token->type = TOK_RETURN;
     }
-    else if (strcmp(token->value, "if") == 0)
+    else if (streq(token->value, "if"))
     {
         token->type = TOK_IF;
     }
-    else if (strcmp(token->value, "else") == 0)
+    else if (streq(token->value, "else"))
     {
         token->type = TOK_ELSE;
     }
-    else if (strcmp(token->value, "for") == 0)
+    else if (streq(token->value, "for"))
     {
         token->type = TOK_FOR;
     }
-    else if (strcmp(token->value, "while") == 0)
+    else if (streq(token->value, "in"))
+    {
+        token->type = TOK_IN;
+    }
+    else if (streq(token->value, "while"))
     {
         token->type = TOK_WHILE;
     }
-    else if (strcmp(token->value, "true") == 0)
+    else if (streq(token->value, "true"))
     {
         token->type = TOK_TRUE;
     }
-    else if (strcmp(token->value, "false") == 0)
+    else if (streq(token->value, "false"))
     {
         token->type = TOK_FALSE;
     }
@@ -434,5 +438,6 @@ bool is_binop(token_type_t type)
 
 bool is_constant(token_type_t type)
 {
-    return type == TOK_NUMBER || type == TOK_TRUE || type == TOK_FALSE;
+    return type == TOK_NUMBER || type == TOK_TRUE || type == TOK_FALSE ||
+           type == TOK_STRING;
 }
