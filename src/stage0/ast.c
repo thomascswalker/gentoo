@@ -207,7 +207,14 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         break;
     case AST_RETURN:
         buffer_puts(out, "{\"type\": \"RETURN\", \"expr\": ");
-        ast_fmt_buf(n->data.ret.node, out);
+        if (n->data.ret.node)
+        {
+            ast_fmt_buf(n->data.ret.node, out);
+        }
+        else
+        {
+            buffer_puts(out, "null");
+        }
         buffer_puts(out, "}");
         break;
     case AST_IF:
@@ -818,10 +825,38 @@ ast* parse_declfn()
     consume(TOK_DECLFN);
 
     ast* expr = ast_new(AST_DECLFN);
+    expr->data.declfn.args = NULL;
+    expr->data.declfn.count = 0;
     expr->data.declfn.identifier = parse_identifier();
+
     consume(TOK_L_PAREN);
 
-    // TODO: Add function arguments
+    // If the next token is not a closing parenthesis `)`,
+    // parse arguments until we hit a closing parenthesis.
+    size_t capacity = 0;
+    if (!expect(TOK_R_PAREN))
+    {
+        capacity = 4;
+        expr->data.declfn.args = (ast**)calloc(capacity, sizeof(ast*));
+        while (true)
+        {
+            if (expr->data.declfn.count >= capacity)
+            {
+                capacity *= 2;
+                expr->data.declfn.args = (ast**)realloc(
+                    expr->data.declfn.args, capacity * sizeof(ast*));
+            }
+            expr->data.declfn.args[expr->data.declfn.count++] =
+                parse_identifier();
+
+            if (expect(TOK_COMMA))
+            {
+                next();
+                continue;
+            }
+            break;
+        }
+    }
 
     consume(TOK_R_PAREN);
     consume(TOK_COLON);
@@ -892,7 +927,14 @@ ast* parse_ret()
     consume(TOK_RETURN);
 
     ast* expr = ast_new(AST_RETURN);
-    expr->data.ret.node = parse_expression();
+    if (!expect(TOK_SEMICOLON))
+    {
+        expr->data.ret.node = parse_expression();
+    }
+    else
+    {
+        expr->data.ret.node = NULL;
+    }
     consume(TOK_SEMICOLON);
 
     return expr;

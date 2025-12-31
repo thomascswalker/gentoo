@@ -14,8 +14,15 @@ fn get_false(): string =>
     return "FALSE";
 }
 
+fn func_args(test): void =>
+{
+    printf("test: %s\n", test);
+    return;
+}
+
 fn main(): int =>
 {
+    func_args("a");
     let count = get_count();
     if (count == 1)
     {

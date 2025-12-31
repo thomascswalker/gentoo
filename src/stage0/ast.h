@@ -94,8 +94,9 @@ AST_NODE(body, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(block, AST_PROP(ast**, statements) AST_PROP(int, count));
 AST_NODE(declvar, AST_PROP(ast*, identifier) AST_PROP(bool, is_const));
 AST_NODE(type, AST_PROP(ast_value_type_t, type));
-AST_NODE(declfn, AST_PROP(ast*, identifier) AST_PROP(ast*, ret_type)
-                     AST_PROP(ast*, block));
+AST_NODE(declfn,
+         AST_PROP(ast*, identifier) AST_PROP(ast**, args) AST_PROP(int, count)
+             AST_PROP(ast*, ret_type) AST_PROP(ast*, block));
 AST_NODE(identifier, AST_PROP(char*, name));
 AST_NODE(constant, AST_PROP(int, value) AST_PROP(char*, string_value)
                        AST_PROP(ast_value_type_t, type));
