@@ -34,31 +34,15 @@ codegen_t CODEGEN_X86_64 = {
     .type = X86_64,
 };
 
-/* Code generation context */
-
-typedef struct codegen_context
-{
-    bool in_function;
-    scope_t* scope;
-    scope_t* global_scope;
-    ptrdiff_t stack_offset;
-    int string_count;
-    bool concat_helper_emitted;
-    int branch_counter;
-    const char* current_function_name;
-    symbol_value_t expected_return_kind;
-} codegen_context_t;
-
 static codegen_context_t g_ctx = {
-    .in_function = false,
-    .scope = NULL,
+    .current_scope = NULL,
     .global_scope = NULL,
     .stack_offset = 0,
     .string_count = 0,
-    .concat_helper_emitted = false,
-    .branch_counter = 0,
+    .branch_count = 0,
+    .in_function = false,
     .current_function_name = NULL,
-    .expected_return_kind = SYMBOL_VALUE_UNKNOWN,
+    .expected_return_type = SYMBOL_VALUE_UNKNOWN,
 };
 
 /* x86 registers used for passing arguments */
@@ -173,21 +157,21 @@ void scope_free(scope_t* scope)
 // nested blocks.
 void scope_push()
 {
-    ASSERT(g_ctx.scope != NULL, "Cannot push scope with no parent.");
+    ASSERT(g_ctx.current_scope != NULL, "Cannot push scope with no parent.");
     // Create a child scope whose parent is the current scope and make it
     // active. Locals declared after this point live inside this new scope.
-    g_ctx.scope = scope_new(g_ctx.scope);
+    g_ctx.current_scope = scope_new(g_ctx.current_scope);
 }
 
 // Pops the current scope and returns control to its parent, freeing all local
 // symbol metadata allocated for that lexical block.
 void scope_pop()
 {
-    ASSERT(g_ctx.scope != NULL, "No scope to pop.");
-    scope_t* current = g_ctx.scope;
+    ASSERT(g_ctx.current_scope != NULL, "No scope to pop.");
+    scope_t* current = g_ctx.current_scope;
     ASSERT(current->parent != NULL, "Cannot pop the global scope.");
     // Restore the parent scope and release the storage used for the child.
-    g_ctx.scope = current->parent;
+    g_ctx.current_scope = current->parent;
     scope_free(current);
 }
 
@@ -252,7 +236,7 @@ symbol_t* scope_add_symbol(scope_t* scope, const char* name,
     symbol_t* symbol = &scope->symbols[scope->count++];
     symbol->name = name;
     symbol->type = type;
-    symbol->value_kind = SYMBOL_VALUE_UNKNOWN;
+    symbol->value_type = SYMBOL_VALUE_UNKNOWN;
     symbol->offset = 0;
 
     char* message = symbol_to_string(symbol);
@@ -290,13 +274,14 @@ symbol_t* symbol_define_global(const char* name)
 // reserved stack slot.
 symbol_t* symbol_define_local(const char* name)
 {
-    ASSERT(g_ctx.scope != NULL, "Current scope is not set.");
-    ASSERT(g_ctx.scope != g_ctx.global_scope,
+    ASSERT(g_ctx.current_scope != NULL, "Current scope is not set.");
+    ASSERT(g_ctx.current_scope != g_ctx.global_scope,
            "Local declarations require a function scope.");
-    symbol_t* existing = scope_lookup_shallow(g_ctx.scope, name);
+    symbol_t* existing = scope_lookup_shallow(g_ctx.current_scope, name);
     ASSERT(existing == NULL, "Symbol %s already defined in this scope.", name);
 
-    symbol_t* symbol = scope_add_symbol(g_ctx.scope, name, SYMBOL_LOCAL);
+    symbol_t* symbol =
+        scope_add_symbol(g_ctx.current_scope, name, SYMBOL_LOCAL);
     // Locals reside on the stack, so reserve and record their frame offset.
     symbol->offset = allocate_stack_slot();
     return symbol;
@@ -309,21 +294,21 @@ symbol_t* symbol_resolve(const char* name)
     // Walk outward through scopes (starting from current) until a declaration
     // appears. This enforces Gentoo's requirement that identifiers must be
     // defined in an enclosing lexical scope.
-    symbol_t* symbol = scope_lookup(g_ctx.scope, name);
+    symbol_t* symbol = scope_lookup(g_ctx.current_scope, name);
     ASSERT(symbol != NULL, "Undefined symbol: %s", name);
     return symbol;
 }
 
-// Infers the static value kind represented by the AST node so type checks can
+// Infers the static value type represented by the AST node so type checks can
 // enforce valid operations (e.g., string concatenation) before emitting code.
-symbol_value_t get_symbol_value_kind(ast* node)
+symbol_value_t get_symbol_value_type(ast* node)
 {
     if (!node)
     {
         return SYMBOL_VALUE_UNKNOWN;
     }
 
-    // Determine the value kind by looking at the syntactic shape; literals and
+    // Determine the value type by looking at the syntactic shape; literals and
     // explicit type annotations provide their type immediately, while
     // identifiers require symbol resolution.
     switch (node->type)
@@ -379,21 +364,21 @@ symbol_value_t get_symbol_value_kind(ast* node)
         return SYMBOL_VALUE_STRING;
     }
     // Resolve the symbol of the identifier by its name and return the symbol's
-    // `value_kind`.
+    // `value_type`.
     case AST_IDENTIFIER:
     {
         char* name = node->data.identifier.name;
         symbol_t* symbol = symbol_resolve(name);
-        ASSERT(symbol->value_kind != SYMBOL_VALUE_UNKNOWN,
+        ASSERT(symbol->value_type != SYMBOL_VALUE_UNKNOWN,
                "Symbol '%s' has unknown type.", symbol->name);
-        return symbol->value_kind;
+        return symbol->value_type;
     }
     // Evalutate the binary operation and determine the resulting symbol value
-    // kind.
+    // type.
     case AST_BINOP:
     {
-        symbol_value_t lhs = get_symbol_value_kind(node->data.binop.lhs);
-        symbol_value_t rhs = get_symbol_value_kind(node->data.binop.rhs);
+        symbol_value_t lhs = get_symbol_value_type(node->data.binop.lhs);
+        symbol_value_t rhs = get_symbol_value_type(node->data.binop.rhs);
 
         ASSERT(lhs != SYMBOL_VALUE_UNKNOWN,
                "Left-hand symbol has unknown type.");
@@ -452,7 +437,7 @@ symbol_value_t get_symbol_value_kind(ast* node)
     {
         symbol_t* symbol =
             symbol_resolve(node->data.call.identifier->data.identifier.name);
-        return symbol->ret_kind;
+        return symbol->ret_type;
     }
     default:
     {
@@ -508,20 +493,20 @@ void x86_globals(ast* node)
                                               SYMBOL_GLOBAL);
                 }
 
-                symbol_value_t rhs_kind =
-                    get_symbol_value_kind(statement->data.assign.rhs);
+                symbol_value_t rhs_type =
+                    get_symbol_value_type(statement->data.assign.rhs);
                 // The first assignment sets the type, subsequent ones must
                 // match to avoid conflicting global definitions.
-                if (symbol->value_kind == SYMBOL_VALUE_UNKNOWN)
+                if (symbol->value_type == SYMBOL_VALUE_UNKNOWN)
                 {
-                    symbol->value_kind = rhs_kind;
+                    symbol->value_type = rhs_type;
                 }
                 else
                 {
-                    ASSERT(symbol->value_kind == rhs_kind,
+                    ASSERT(symbol->value_type == rhs_type,
                            "Global '%s' type mismatch (%s vs %s).", name,
-                           symbol_value_to_string(symbol->value_kind),
-                           symbol_value_to_string(rhs_kind));
+                           symbol_value_to_string(symbol->value_type),
+                           symbol_value_to_string(rhs_type));
                 }
             }
         }
@@ -553,8 +538,7 @@ void x86_prologue()
     EMIT(SECTION_TEXT, "\tmov rbp, rsp\n");
 }
 
-/* Emits a simple comment line. */
-// Convenience emitter for human-readable comments in the assembly output.
+// Emits a simple comment line.
 void x86_comment(char* text)
 {
     // Comments are prefixed with ';' in NASM syntax.
@@ -579,9 +563,9 @@ char* x86_binop(ast* node)
 
     if (binop->op == BIN_ADD)
     {
-        symbol_value_t lhs_kind = get_symbol_value_kind(binop->lhs);
-        symbol_value_t rhs_kind = get_symbol_value_kind(binop->rhs);
-        if (lhs_kind == SYMBOL_VALUE_STRING && rhs_kind == SYMBOL_VALUE_STRING)
+        symbol_value_t lhs_type = get_symbol_value_type(binop->lhs);
+        symbol_value_t rhs_type = get_symbol_value_type(binop->rhs);
+        if (lhs_type == SYMBOL_VALUE_STRING && rhs_type == SYMBOL_VALUE_STRING)
         {
             // String concatenation is implemented via the helper; bail out of
             // the numeric pipeline once we detect both operands are strings.
@@ -726,7 +710,7 @@ void x86_declfn(ast* node)
     if (!symbol)
     {
         symbol = symbol_define_global(name);
-        symbol->ret_kind = get_symbol_value_kind(node->data.declfn.ret_type);
+        symbol->ret_type = get_symbol_value_type(node->data.declfn.ret_type);
     }
     else
     {
@@ -737,12 +721,12 @@ void x86_declfn(ast* node)
     bool prev_in_function = g_ctx.in_function;
     ptrdiff_t prev_stack_offset = g_ctx.stack_offset;
     const char* prev_function_name = g_ctx.current_function_name;
-    symbol_value_t prev_return_kind = g_ctx.expected_return_kind;
+    symbol_value_t prev_return_type = g_ctx.expected_return_type;
 
     g_ctx.in_function = true;
     g_ctx.stack_offset = 0;
     g_ctx.current_function_name = name;
-    g_ctx.expected_return_kind = symbol->ret_kind;
+    g_ctx.expected_return_type = symbol->ret_type;
 
     EMIT(SECTION_GLOBAL, "global %s\n", name);
     EMIT(SECTION_TEXT, "%s:\n", name);
@@ -757,7 +741,7 @@ void x86_declfn(ast* node)
     g_ctx.in_function = prev_in_function;
     g_ctx.stack_offset = prev_stack_offset;
     g_ctx.current_function_name = prev_function_name;
-    g_ctx.expected_return_kind = prev_return_kind;
+    g_ctx.expected_return_type = prev_return_type;
     EXIT(DECLFN);
 }
 
@@ -770,7 +754,7 @@ void x86_assign(ast* node)
 
     // Emit the right hand side first (fully processing any expressions)
     ast* rhs = node->data.assign.rhs;
-    symbol_value_t rhs_kind = get_symbol_value_kind(rhs);
+    symbol_value_t rhs_type = get_symbol_value_type(rhs);
     char* rhs_reg = x86_expr(rhs);
 
     ast* lhs = node->data.assign.lhs;
@@ -808,18 +792,18 @@ void x86_assign(ast* node)
 
     ASSERT(symbol != NULL, "Failed to resolve symbol for %s", name);
 
-    // Fix up the symbol's value kind the first time we encounter it and ensure
+    // Fix up the symbol's value type the first time we encounter it and ensure
     // subsequent assignments respect the inferred/static type.
-    if (symbol->value_kind == SYMBOL_VALUE_UNKNOWN)
+    if (symbol->value_type == SYMBOL_VALUE_UNKNOWN)
     {
-        symbol->value_kind = rhs_kind;
+        symbol->value_type = rhs_type;
     }
     else
     {
-        ASSERT(symbol->value_kind == rhs_kind,
+        ASSERT(symbol->value_type == rhs_type,
                "Cannot assign %s value to %s (expected %s).",
-               symbol_value_to_string(rhs_kind), name,
-               symbol_value_to_string(symbol->value_kind));
+               symbol_value_to_string(rhs_type), name,
+               symbol_value_to_string(symbol->value_type));
     }
 
     if (symbol->type == SYMBOL_GLOBAL)
@@ -850,7 +834,7 @@ void x86_if(ast* node)
            ast_to_string(node->type));
 
     ast_if_stmt* stmt = &node->data.if_stmt;
-    int label_id = g_ctx.branch_counter++;
+    int label_id = g_ctx.branch_count++;
 
     // Evaluate the condition once and compare the result against zero.
     char* cond_reg = x86_expr(stmt->condition);
@@ -901,31 +885,31 @@ void x86_return(ast* node)
 {
     ENTER(RET);
     ast* rhs = node->data.ret.node;
-    symbol_value_t expected_kind = g_ctx.expected_return_kind;
-    ASSERT(expected_kind != SYMBOL_VALUE_UNKNOWN,
+    symbol_value_t expected_type = g_ctx.expected_return_type;
+    ASSERT(expected_type != SYMBOL_VALUE_UNKNOWN,
            "Return statement outside of a function context.");
 
-    symbol_value_t actual_kind =
-        rhs ? get_symbol_value_kind(rhs) : SYMBOL_VALUE_VOID;
+    symbol_value_t actual_type =
+        rhs ? get_symbol_value_type(rhs) : SYMBOL_VALUE_VOID;
     const char* fn_name = g_ctx.current_function_name
                               ? g_ctx.current_function_name
                               : "<anonymous>";
 
     // Enforce that void signatures never produce a value and non-void
-    // signatures always return exactly one value of the right kind.
-    if (expected_kind == SYMBOL_VALUE_VOID)
+    // signatures always return exactly one value of the right type.
+    if (expected_type == SYMBOL_VALUE_VOID)
     {
-        ASSERT(rhs == NULL || actual_kind == SYMBOL_VALUE_VOID,
+        ASSERT(rhs == NULL || actual_type == SYMBOL_VALUE_VOID,
                "Function '%s' declared void cannot return a value.", fn_name);
     }
     else
     {
         ASSERT(rhs != NULL, "Function '%s' must return a %s value.", fn_name,
-               symbol_value_to_string(expected_kind));
-        ASSERT(actual_kind == expected_kind,
+               symbol_value_to_string(expected_type));
+        ASSERT(actual_type == expected_type,
                "Return type mismatch in function '%s' (expected %s, got %s).",
-               fn_name, symbol_value_to_string(expected_kind),
-               symbol_value_to_string(actual_kind));
+               fn_name, symbol_value_to_string(expected_type),
+               symbol_value_to_string(actual_type));
     }
 
     if (rhs)
@@ -1031,10 +1015,10 @@ char* x86_string(char* text)
     // manage memory in a more efficient way.
     buffer_t* line = buffer_new();
 
-    // Define the name as 'printf_string_n' where 'n' is the current
+    // Define the name as 'string_n' where 'n' is the current
     // string count.
     // Always define as bytes.
-    char* string_name = formats("printf_string_%d", g_ctx.string_count);
+    char* string_name = formats("string_%d", g_ctx.string_count);
     buffer_printf(line, "\t%s: db ", string_name);
 
     // Write each character of the string individually in order
@@ -1189,12 +1173,12 @@ void x86_program(ast* node)
     // Initialize scope state
     scope_free(g_ctx.global_scope);
     g_ctx.global_scope = scope_new(NULL);
-    g_ctx.scope = g_ctx.global_scope;
+    g_ctx.current_scope = g_ctx.global_scope;
     g_ctx.in_function = false;
     g_ctx.stack_offset = 0;
-    g_ctx.branch_counter = 0;
+    g_ctx.branch_count = 0;
     g_ctx.current_function_name = NULL;
-    g_ctx.expected_return_kind = SYMBOL_VALUE_UNKNOWN;
+    g_ctx.expected_return_type = SYMBOL_VALUE_UNKNOWN;
 
     // Collect all global symbols prior to emitting any code.
     x86_globals(node);
@@ -1227,6 +1211,6 @@ void x86_program(ast* node)
 
     scope_free(g_ctx.global_scope);
     g_ctx.global_scope = NULL;
-    g_ctx.scope = NULL;
+    g_ctx.current_scope = NULL;
     EXIT(PROGRAM);
 }

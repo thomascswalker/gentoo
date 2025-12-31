@@ -35,9 +35,9 @@ static char* symbol_type_to_string(symbol_scope_t type)
     return type == SYMBOL_GLOBAL ? "GLOBAL" : "LOCAL";
 }
 
-static char* symbol_value_to_string(symbol_value_t kind)
+static char* symbol_value_to_string(symbol_value_t type)
 {
-    switch (kind)
+    switch (type)
     {
     case SYMBOL_VALUE_INT:
         return "INT";
@@ -57,8 +57,8 @@ typedef struct symbol_t
 {
     const char* name;
     symbol_scope_t type;
-    symbol_value_t value_kind;
-    symbol_value_t ret_kind;
+    symbol_value_t value_type;
+    symbol_value_t ret_type;
     ptrdiff_t offset; // Stack offset
 } symbol_t;
 
@@ -67,7 +67,7 @@ static char* symbol_to_string(symbol_t* symbol)
 {
     return formats("'%s', %s, %s, 0x%02x", symbol->name,
                    symbol_type_to_string(symbol->type),
-                   symbol_value_to_string(symbol->value_kind), symbol->offset);
+                   symbol_value_to_string(symbol->value_type), symbol->offset);
 }
 
 typedef struct scope_t
@@ -106,12 +106,36 @@ symbol_t* symbol_define_global(const char* name);
 symbol_t* symbol_define_local(const char* name);
 // Resolves a symbol name and asserts it exists within reachable scopes.
 symbol_t* symbol_resolve(const char* name);
-// Given the specified AST node, returns the evaluated symbol value kind.
-symbol_value_t get_symbol_value_kind(ast* node);
+// Given the specified AST node, returns the evaluated symbol value type.
+symbol_value_t get_symbol_value_type(ast* node);
 
 /* Assembly */
 
-// Scans the AST for global definitions and records them for later codegen.
+typedef struct codegen_context
+{
+    /* Scope */
+
+    // Current scope
+    scope_t* current_scope;
+    // Global (root) scope
+    scope_t* global_scope;
+    // Current offset on the stack
+    ptrdiff_t stack_offset;
+
+    // Count of string literals
+    int string_count;
+
+    // Count of branch blocks
+    int branch_count;
+
+    // Are we currently in a function call?
+    bool in_function;
+    // Current function name
+    const char* current_function_name;
+    // Current function return type
+    symbol_value_t expected_return_type;
+} codegen_context_t;
+
 void x86_globals(ast* node);
 void x86_program(ast* node);
 void x86_body(ast* node);
