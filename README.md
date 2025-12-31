@@ -55,3 +55,30 @@ fn main() =>
     return c;
 }
 ```
+
+### Fibonnaci Sequence
+
+```rust
+let ITER = 0;
+
+fn fib(a, b, cap): void =>
+{
+    let c = a + b;
+    printf("n%d: %d\n", ITER, c);
+    a = b;
+    b = c;
+    if (c < cap)
+    {
+        ITER = ITER + 1;
+        fib(a, b, cap);
+    }
+}
+
+fn main(): int =>
+{
+    printf("Fibonnaci sequence:\n");
+    let cap = 1000;
+    fib(0, 1, cap);
+    return 0;
+}
+```

@@ -43,6 +43,8 @@ static codegen_context_t g_ctx = {
     .in_function = false,
     .current_function_name = NULL,
     .expected_return_type = SYMBOL_VALUE_UNKNOWN,
+    .has_returned = false,
+    .pending_function = NULL,
 };
 
 /* x86 registers used for passing arguments */
@@ -50,6 +52,67 @@ static codegen_context_t g_ctx = {
 static const char* ARG_REGISTERS[] = {RDI, RSI, RDX, RCX, R8, R9};
 static const size_t ARG_REGISTER_COUNT =
     sizeof(ARG_REGISTERS) / sizeof(ARG_REGISTERS[0]);
+
+static symbol_value_t symbol_value_from_ast_type(ast_value_type_t type)
+{
+    switch (type)
+    {
+    case TYPE_BOOL:
+        return SYMBOL_VALUE_BOOL;
+    case TYPE_INT:
+        return SYMBOL_VALUE_INT;
+    case TYPE_STRING:
+        return SYMBOL_VALUE_STRING;
+    case TYPE_VOID:
+    default:
+        ASSERT(false, "Invalid or unsupported parameter type: %d", type);
+        return SYMBOL_VALUE_UNKNOWN;
+    }
+}
+
+static void x86_bind_function_args(ast* block_node)
+{
+    ast_declfn* pending = (ast_declfn*)g_ctx.pending_function;
+    if (!pending || !block_node || pending->block != block_node)
+    {
+        return;
+    }
+
+    for (int i = 0; i < pending->count; i++)
+    {
+        ast* arg_ident = pending->args ? pending->args[i] : NULL;
+        if (!arg_ident)
+        {
+            continue;
+        }
+
+        char* name = arg_ident->data.identifier.name;
+        symbol_t* symbol = symbol_define_local(name);
+        ast_value_type_t arg_type = (pending->arg_types && i < pending->count)
+                                        ? pending->arg_types[i]
+                                        : TYPE_INT;
+        symbol->value_type = symbol_value_from_ast_type(arg_type);
+
+        if ((size_t)i < ARG_REGISTER_COUNT)
+        {
+            const char* src = ARG_REGISTERS[i];
+            EMIT(SECTION_TEXT, "\tmov [rbp%+td], %s\n", symbol->offset, src);
+        }
+        else
+        {
+            size_t stack_index = (size_t)i - ARG_REGISTER_COUNT;
+            size_t src_offset = 16 + stack_index * 8;
+            char* tmp = register_lock();
+            ASSERT(tmp != NULL,
+                   "Ran out of registers while binding function arguments.");
+            EMIT(SECTION_TEXT, "\tmov %s, [rbp+%zu]\n", tmp, src_offset);
+            EMIT(SECTION_TEXT, "\tmov [rbp%+td], %s\n", symbol->offset, tmp);
+            register_unlock();
+        }
+    }
+
+    g_ctx.pending_function = NULL;
+}
 
 // Concatenates two runtime strings via the shared helper, returning a register
 // that holds the newly allocated buffer address.
@@ -522,6 +585,7 @@ void x86_epilogue(bool returns)
         // Only emit `ret` when ending a function, not internal helper
         // epilogues.
         EMIT(SECTION_TEXT, "\tret\n");
+        g_ctx.has_returned = true;
     }
 }
 
@@ -681,6 +745,7 @@ void x86_block(ast* node)
 
     // Each block introduces a fresh scope to keep locals isolated.
     scope_push();
+    x86_bind_function_args(node);
     ast_block* block = &node->data.block;
     for (int i = 0; i < block->count; i++)
     {
@@ -688,6 +753,7 @@ void x86_block(ast* node)
         // scope and stack frame until the block completes.
         x86_statement(block->statements[i]);
     }
+
     scope_pop();
 }
 
@@ -722,6 +788,7 @@ void x86_declfn(ast* node)
     g_ctx.stack_offset = 0;
     g_ctx.current_function_name = name;
     g_ctx.expected_return_type = symbol->ret_type;
+    g_ctx.has_returned = false;
 
     EMIT(SECTION_GLOBAL, "global %s\n", name);
     EMIT(SECTION_TEXT, "%s:\n", name);
@@ -731,7 +798,23 @@ void x86_declfn(ast* node)
     x86_prologue();
 
     // Emit the body statements with the newly created function context.
+    g_ctx.pending_function = (ast*)&node->data.declfn;
     x86_block(node->data.declfn.block);
+
+    // Allow omission of explicit return for void functions by emitting the
+    // shared epilogue if no earlier return ran.
+    if (symbol->ret_type == SYMBOL_VALUE_VOID && !g_ctx.has_returned)
+    {
+        x86_epilogue(true);
+    }
+    else if (!g_ctx.has_returned)
+    {
+        log_error("Missing return type in function '%s' (expected %s).",
+                  symbol->name, symbol_value_to_string(symbol->ret_type));
+        exit(1);
+    }
+    g_ctx.has_returned = false;
+    g_ctx.pending_function = NULL;
 
     g_ctx.in_function = prev_in_function;
     g_ctx.stack_offset = prev_stack_offset;
@@ -1173,6 +1256,7 @@ void x86_program(ast* node)
     g_ctx.branch_count = 0;
     g_ctx.current_function_name = NULL;
     g_ctx.expected_return_type = SYMBOL_VALUE_UNKNOWN;
+    g_ctx.pending_function = NULL;
 
     // Collect all global symbols prior to emitting any code.
     x86_globals(node);

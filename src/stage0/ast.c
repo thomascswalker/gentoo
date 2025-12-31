@@ -163,6 +163,23 @@ void ast_fmt_buf(ast* n, buffer_t* out)
         buffer_printf(out,
                       "{\"type\": \"%s\", \"ident\": ", ast_to_string(n->type));
         ast_fmt_buf(n->data.declfn.identifier, out);
+        buffer_puts(out, ", \"args\": [");
+        for (int i = 0; i < n->data.declfn.count; i++)
+        {
+            if (i > 0)
+            {
+                buffer_puts(out, ", ");
+            }
+            buffer_puts(out, "{\"name\": ");
+            ast_fmt_buf(n->data.declfn.args[i], out);
+            ast_value_type_t arg_type =
+                (n->data.declfn.arg_types && i < n->data.declfn.count)
+                    ? n->data.declfn.arg_types[i]
+                    : TYPE_INT;
+            buffer_printf(out, ", \"type\": \"%s\"}",
+                          ast_value_type_to_string(arg_type));
+        }
+        buffer_puts(out, "]");
         buffer_printf(out, ", \"ret_type\": ");
         ast_fmt_buf(n->data.declfn.ret_type, out);
         buffer_printf(out, ", \"block\": ");
@@ -354,6 +371,21 @@ void ast_free(ast* node)
         break;
     case AST_DECLFN:
         ast_free(node->data.declfn.identifier);
+        if (node->data.declfn.args)
+        {
+            for (int i = 0; i < node->data.declfn.count; i++)
+            {
+                ast_free(node->data.declfn.args[i]);
+            }
+            free(node->data.declfn.args);
+            node->data.declfn.args = NULL;
+        }
+        if (node->data.declfn.arg_types)
+        {
+            free(node->data.declfn.arg_types);
+            node->data.declfn.arg_types = NULL;
+        }
+        ast_free(node->data.declfn.ret_type);
         ast_free(node->data.declfn.block);
         break;
     case AST_IDENTIFIER:
@@ -826,6 +858,7 @@ ast* parse_declfn()
 
     ast* expr = ast_new(AST_DECLFN);
     expr->data.declfn.args = NULL;
+    expr->data.declfn.arg_types = NULL;
     expr->data.declfn.count = 0;
     expr->data.declfn.identifier = parse_identifier();
 
@@ -838,6 +871,8 @@ ast* parse_declfn()
     {
         capacity = 4;
         expr->data.declfn.args = (ast**)calloc(capacity, sizeof(ast*));
+        expr->data.declfn.arg_types =
+            (ast_value_type_t*)calloc(capacity, sizeof(ast_value_type_t));
         while (true)
         {
             if (expr->data.declfn.count >= capacity)
@@ -845,9 +880,31 @@ ast* parse_declfn()
                 capacity *= 2;
                 expr->data.declfn.args = (ast**)realloc(
                     expr->data.declfn.args, capacity * sizeof(ast*));
+                expr->data.declfn.arg_types = (ast_value_type_t*)realloc(
+                    expr->data.declfn.arg_types,
+                    capacity * sizeof(ast_value_type_t));
             }
-            expr->data.declfn.args[expr->data.declfn.count++] =
-                parse_identifier();
+            ast* arg_ident = parse_identifier();
+            ast_value_type_t arg_type = TYPE_INT;
+            if (expect(TOK_COLON))
+            {
+                next();
+                require(TOK_IDENTIFIER);
+                ast* type_node = parse_type();
+                arg_type = type_node->data.type.type;
+                if (arg_type == TYPE_VOID)
+                {
+                    log_error("Function parameters cannot have type void.");
+                    exit(1);
+                }
+                ast_free(type_node);
+            }
+            expr->data.declfn.args[expr->data.declfn.count] = arg_ident;
+            if (expr->data.declfn.arg_types)
+            {
+                expr->data.declfn.arg_types[expr->data.declfn.count] = arg_type;
+            }
+            expr->data.declfn.count++;
 
             if (expect(TOK_COMMA))
             {
