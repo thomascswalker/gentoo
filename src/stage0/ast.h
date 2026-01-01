@@ -111,6 +111,7 @@ AST_NODE(if_stmt, AST_PROP(ast*, condition) AST_PROP(ast*, then_branch)
                       AST_PROP(ast*, else_branch));
 AST_NODE(for_stmt,
          AST_PROP(ast*, identifier) AST_PROP(ast*, expr) AST_PROP(ast*, block));
+AST_NODE(while_stmt, AST_PROP(ast*, condition) AST_PROP(ast*, block));
 
 #undef PAD
 #undef AST_PROP
@@ -140,6 +141,7 @@ struct ast
         struct ast_type type;
         struct ast_if_stmt if_stmt;
         struct ast_for_stmt for_stmt;
+        struct ast_while_stmt while_stmt;
     } data;
     size_t start;
     size_t end;
@@ -167,6 +169,7 @@ ast* parse_declfn();
 ast* parse_ret();
 ast* parse_if();
 ast* parse_for();
+ast* parse_while();
 ast* parse_statement();
 ast* parse_block();
 ast* parse_body();

@@ -111,6 +111,11 @@ bool is_string(char c)
     return c == '"';
 }
 
+bool is_comment(char* str)
+{
+    return str[0] == '/' && str[1] == '/';
+}
+
 bool is_operator(char c)
 {
     return c == '+' || c == '-' || c == '*' || c == '/' || c == '=' ||
@@ -133,6 +138,22 @@ bool is_compound_op(char* str)
         return true;
     }
     return false;
+}
+
+token_t* tokenize_comment()
+{
+    token_t* token = new_token();
+    token->start = g_pos;
+    token->type = TOK_COMMENT;
+
+    // Keep going until we hit a new line
+    while (g_buf[g_pos] != '\n')
+    {
+        g_pos++;
+    }
+
+    token->end = g_pos;
+    return token;
 }
 
 token_t* tokenize_number()
@@ -347,6 +368,15 @@ token_t* tokenize_next()
 
     char c = g_buf[g_pos];
 
+    if (is_comment(&g_buf[g_pos]))
+    {
+        // Keep going until we hit a new line
+        while (g_buf[g_pos] != '\n')
+        {
+            g_pos++;
+        }
+        return NULL;
+    }
     if (isdigit((unsigned char)c))
     {
         return tokenize_number();
@@ -394,10 +424,10 @@ size_t tokenize(char* buffer, token_t* tokens)
         // Get the next token.
         token_t* t = tokenize_next();
 
-        // If the token is invalid, break.
+        // If the token is invalid, continue.
         if (!t)
         {
-            break;
+            continue;
         }
 
         // Copy the token into the token buffer.

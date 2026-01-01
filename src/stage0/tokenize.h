@@ -27,6 +27,7 @@ typedef enum token_type_t
     TOK_EQ,
     TOK_GT,
     TOK_LT,
+    TOK_COMMENT,
 
     TOK_ASSIGN = '=',
     TOK_ADD = '+',
