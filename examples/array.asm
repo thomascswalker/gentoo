@@ -5,9 +5,9 @@ global array_malloc
 global array_free
 
 section .data
-    array_count: dq 0x100                            ; 64-bit
+    array_count: dq 16
 
-    fmt_int: db "INT: %ld", 10, 0      ; 64-bit integer format
+    fmt_int: db "INT: %ld", 10, 0
     fmt_malloc_result: db "Allocated %ld bytes at %p", 10, 0
 
     array_ptr: dq 0
@@ -36,16 +36,16 @@ extern printf
 %macro NEW_ARRAY 3
     ; Parameters: %1 = array name, %2 = array size, %3 = elem_size
     ALIGN_STACK
-    ; Load size and multiply by elem_size to get total bytes
-    mov rax, QWORD [%2]
-    imul rax, %3
-    push rax
+    mov rax, QWORD [%2]     ; Load size
+    imul rax, %3            ; multiply by elem_size to get total bytes
+    push rax                ; Push total byte size as arg 1
     call array_malloc
-    add rsp, 16                 ; Clean up the pushed arguments from the stack
-    mov [rel %1], rax    ; Move returned pointer into specified var
+    add rsp, 16             ; Clean up the pushed arguments from the stack
+    mov [rel %1], rax       ; Move returned pointer into specified var
 %endmacro
 
 %macro FREE_ARRAY 1
+    ALIGN_STACK
     mov rax, %1
     call array_free
     add rsp, 16
@@ -123,31 +123,6 @@ extern printf
     mov rax, rbx    ; restore rax
 %endmacro
 
-%define ELEM_SIZE 8
-
-main:
-    ; Create a new array: `array = malloc(count * sizeof(T));`
-    NEW_ARRAY array_ptr, array_count, ELEM_SIZE
-
-    ; Set array elements: `array[index] = value;`
-    SET_ARRAY_ELEM array_ptr, 0, 5, ELEM_SIZE 
-    SET_ARRAY_ELEM array_ptr, 1, 10, ELEM_SIZE
-    SET_ARRAY_ELEM array_ptr, 2, 15, ELEM_SIZE
-    SET_ARRAY_ELEM array_ptr, 3, 50, ELEM_SIZE
-
-    ; Print array elements: `printf("%d\n", array[index]);`
-    PRINT_ARRAY_ELEM array_ptr, 0, ELEM_SIZE
-    PRINT_ARRAY_ELEM array_ptr, 1, ELEM_SIZE
-    PRINT_ARRAY_ELEM array_ptr, 2, ELEM_SIZE
-    PRINT_ARRAY_ELEM array_ptr, 3, ELEM_SIZE
-
-    ALIGN_STACK
-    
-    FREE_ARRAY array_free
-
-    ; Exit
-    mov rdi, 0
-    call exit
 
 ; array_malloc
 ;
@@ -158,9 +133,7 @@ main:
 array_malloc:
     enter
 
-    PRINT_INT [ARG1]
-
-    ; Call malloc(size) where size is on the caller's stack at [rbp+16]
+    ; malloc(size)
     mov rdi, [ARG1]
     xor rax, rax
     call malloc
@@ -197,6 +170,29 @@ array_malloc:
 array_free:
     enter
     mov rdi, [ARG1]
-    xor rax, rax
     call free
     leave
+
+%define ELEM_SIZE 8
+
+main:
+    ; Create a new array: `array = malloc(count * sizeof(T));`
+    NEW_ARRAY array_ptr, array_count, ELEM_SIZE
+
+    ; Set array elements: `array[index] = value;`
+    SET_ARRAY_ELEM array_ptr, 0, 5, ELEM_SIZE 
+    SET_ARRAY_ELEM array_ptr, 1, 10, ELEM_SIZE
+    SET_ARRAY_ELEM array_ptr, 2, 15, ELEM_SIZE
+    SET_ARRAY_ELEM array_ptr, 3, 50, ELEM_SIZE
+
+    ; Print array elements: `printf("%d\n", array[index]);`
+    PRINT_ARRAY_ELEM array_ptr, 0, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 1, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 2, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 3, ELEM_SIZE
+
+    FREE_ARRAY array_free
+
+    ; Exit
+    mov rdi, 0
+    call exit
