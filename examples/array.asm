@@ -173,10 +173,11 @@ array_free:
     call free
     leave
 
-%define ELEM_SIZE 8
+%define ELEM_SIZE 1
 
 main:
     ; Create a new array: `array = malloc(count * sizeof(T));`
+    ; There is no bounds checking, so memory is always volatile.
     NEW_ARRAY array_ptr, array_count, ELEM_SIZE
 
     ; Set array elements: `array[index] = value;`
