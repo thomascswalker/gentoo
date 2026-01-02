@@ -1,3 +1,5 @@
+%include "examples/common.asm"
+
 global main
 global array_new
 global array_subscript_set
@@ -8,6 +10,8 @@ section .data
     fmt_int: db "INT: %ld", 10, 0      ; 64-bit integer format
     fmt_malloc_result: db "Allocated %ld bytes at %p", 10, 0
 
+    array_ptr: dq 0
+
 section .text
 
 extern exit
@@ -15,23 +19,6 @@ extern malloc
 extern realloc
 extern free
 extern printf
-
-%define ALIGN_STACK push 0
-
-%macro enter 0
-    push rbp                    ; Saves the caller's base pointer onto the stack
-    mov rbp, rsp                ; Sets the current base pointer to the current stack pointer
-%endmacro
-
-%macro leave 0
-    mov rsp, rbp                ; Restore stack pointer from frame pointer
-    pop rbp                     ; Restores the caller's base pointer
-    ret                         ; Returns from the function
-%endmacro
-
-%define ARG1 rbp + 16           ; First argument 
-%define ARG2 rbp + 24           ; Second argument
-%define ARG3 rbp + 32           ; Third argument 
 
 %macro PRINT_INT 1
     mov rsi, %1                 
@@ -41,49 +28,107 @@ extern printf
     call printf
 %endmacro
 
-%define ELEM_SIZE 1
-
-%macro ARRAY_NEW 1
+%macro ARRAY_NEW 3
+    ; Parameters: %1 = array name, %2 = array size, %3 = elem_size
     ALIGN_STACK
-    push QWORD [%1]
+    ; Load size and multiply by elem_size to get total bytes
+    mov rax, QWORD [%2]
+    imul rax, %3
+    push rax
     call array_new
     add rsp, 16                 ; Clean up the pushed arguments from the stack
+    mov [rel %1], rax    ; Move returned pointer into specified var
 %endmacro
 
-%macro SET_ARRAY_ELEM 3
-    ; Parameters: %1 = array name, %2 = index, %3 = value
-    mov BYTE [%1 + %2 * ELEM_SIZE], %3   ; Store the value at the calculated address
+%macro SET_ARRAY_ELEM 4
+    ; Parameters: %1 = array name, %2 = index, %3 = value, %4 = elem_size
+    ; Compute offset = index * elem_size. For small constant elem_size, NASM will optimize.
+    mov rdx, %2
+    imul rdx, %4
+    add rdx, %1
+
+    %if %4 = 1
+        mov BYTE [rdx], %3
+    %elif %4 = 2
+        mov WORD [rdx], %3
+    %elif %4 = 4
+        mov DWORD [rdx], %3
+    %elif %4 = 8
+        mov QWORD [rdx], %3
+    %else
+        ; Invalid element size
+        ; Must be 1, 2, 4, or 8
+        mov rdi, 2
+        call exit
+    %endif
 %endmacro
 
-%macro GET_ARRAY_ELEM 3
-    ; %1 = base ptr, %2 = index, %3 = destination register (64-bit)
-    movzx %3, BYTE [%1 + %2 * ELEM_SIZE]
+%macro GET_ARRAY_ELEM 4
+    ; %1 = base ptr, %2 = index, %3 = destination register (64-bit), %4 = elem_size
+    mov rdx, %2
+    imul rdx, %4
+    add rdx, %1
+    %if %4 = 1
+        movzx %3, BYTE [rdx]
+    %elif %4 = 2
+        movzx %3, WORD [rdx]
+    %elif %4 = 4
+        movzx %3, DWORD [rdx]
+    %elif %4 = 8
+        mov %3, QWORD [rdx]
+    %else
+        ; Invalid element size
+        ; Must be 1, 2, 4, or 8
+        mov rdi, 2
+        call exit
+    %endif
 %endmacro
 
-%macro PRINT_ARRAY_ELEM 2
-    ; %1 = base ptr, %2 = index
-    mov rbx, rax    ; save rax, by calling printf we will override it
+%macro PRINT_ARRAY_ELEM 3
+    ; %1 = base ptr, %2 = index, %3 = elem_size
+    mov rbx, rax ; save rax, by calling printf we will override it
 
-    movzx rsi, BYTE [%1 + %2 * ELEM_SIZE]               
-    lea rdi, [rel fmt_int]    
-    xor eax, eax                
+    mov rdx, %2
+    imul rdx, %3
+    add rdx, %1
+    %if %3 = 1                  ; 1-byte (char)
+        movzx rsi, BYTE [rdx]
+    %elif %3 = 2                ; 2-bytes (short)
+        movzx rsi, WORD [rdx]
+    %elif %3 = 4                ; 4-bytes (int)
+        movzx rsi, DWORD [rdx]
+    %elif %3 = 8                ; 8-bytes (long)
+        mov rsi, QWORD [rdx]
+    %else
+        ; Invalid element size
+        ; Must be 1, 2, 4, or 8
+        mov rdi, 2
+        call exit
+    %endif
+    lea rdi, [rel fmt_int]
+    xor eax, eax
     xor rax, rax
     call printf
 
     mov rax, rbx    ; restore rax
 %endmacro
 
+%define ELEM_SIZE 2
+
 main:
-    ; Call array_new with size on stack, keep alignment (push padding)
-    ARRAY_NEW byte_count
+    ; Create a new array: `array_ptr = malloc(byte_count)`
+    ; element size = 1 (bytes)
+    ARRAY_NEW array_ptr, byte_count, ELEM_SIZE
 
-    SET_ARRAY_ELEM rax, 0, 5    ; array[0] = 5
-    SET_ARRAY_ELEM rax, 1, 10   ; array[1] = 10
-    SET_ARRAY_ELEM rax, 2, 15   ; array[1] = 10
+    SET_ARRAY_ELEM array_ptr, 0, 5, ELEM_SIZE    ; array[0] = 5
+    SET_ARRAY_ELEM array_ptr, 1, 10, ELEM_SIZE   ; array[1] = 10
+    SET_ARRAY_ELEM array_ptr, 2, 15, ELEM_SIZE   ; array[2] = 15
+    SET_ARRAY_ELEM array_ptr, 3, 50, ELEM_SIZE   ; array[2] = 15
 
-    PRINT_ARRAY_ELEM rax, 0
-    PRINT_ARRAY_ELEM rax, 1
-    PRINT_ARRAY_ELEM rax, 2
+    PRINT_ARRAY_ELEM array_ptr, 0, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 1, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 2, ELEM_SIZE
+    PRINT_ARRAY_ELEM array_ptr, 3, ELEM_SIZE
 
     ; Exit
     mov rdi, 0
@@ -116,7 +161,6 @@ array_new:
     call exit
 .malloc_success:
     ; after malloc, rax = ptr
-
     mov rbx, rax          ; save return value (rbx is callee-saved)
 
     lea rdi, [rel fmt_malloc_result]
