@@ -3,11 +3,12 @@
 
 ### Requirements
 
+- `nasm`
 - `gcc`
 
 If on Windows:
 
-- `WSL`
+- `WSL2`
 
 ### Architecture & Design
 

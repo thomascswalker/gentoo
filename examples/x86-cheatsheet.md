@@ -1,3 +1,14 @@
+# NASM x86(-64) Assembly Cheatsheet
+
+## Requirements
+
+- NASM
+- GCC
+
+### Additional Requirements on Windows
+
+- WSL2
+
 ## Functions
 
 ### Declaration
@@ -38,18 +49,16 @@ call my_function
 Because arguments are passed on the stack, they need to be accessed through the stack. The stack inside a function, once `enter` has been used, looks like:
 
 > [!IMPORTANT]
-> `n` below represents the byte-size of each stack element which varies depending on the operating system (e.g. 32-bit vs. 64-bit).
+> `n` below represents the WORD size which varies depending on the operating system (e.g. 32-bit vs. 64-bit).
 > Values can be:
-> | Arch | Size |
+> | Arch | WORD Size |
 > | --- | --- |
 > | `x86-32` | 4 |
-> | `win32` | 4 |
 > | `x86-64` | 8 |
-> | `x64` | 8 |
 
 | Offset | Purpose |
 | --- | --- |
-| `[rbp + (n * 0)]`  | Stack pointer  |
+| `[rbp + (n * 0)]`  | Stack pointer |
 | `[rbp + (n * 1)]`  | Return pointer  |
 | `[rbp + (n * 2)]`  | Arg 1  |
 | `[rbp + (n * 3)]`  | Arg 2  |
@@ -57,7 +66,11 @@ Because arguments are passed on the stack, they need to be accessed through the 
 
 
 ```asm
-
+my_function:
+    enter
+    mov rdi, [rbp + 16] ; Move argument 1 into RDI
+    ; ...
+    leave
 ```
 
 ### Prologue/Epilogues (`enter` and `leave` macros)
@@ -78,6 +91,36 @@ When **exiting** a function, the convention is reversed: move the current base p
 mov rsp, rbp    ; Restore stack pointer from frame pointer
 pop rbp         ; Restores the caller's base pointer
 ret             ; Returns from the function
+```
+
+## External Functions (from C)
+
+### Including external functions
+
+> [!WARNING]
+> Using external C functions requires linking with the C standard library. While this can be done with `ld`, ultimately it's easiest to link with `gcc`.
+
+```asm
+extern printf
+```
+
+### Calling external functions
+
+External C functions may pass arguments on the stack, but they also
+may expect arguments are passed in registers.
+
+```asm
+global main
+extern printf                           ; Include `printf` from `stdlib`
+
+section .data
+    my_string: db "Number: %d\n", 10, 0 ; Format string
+
+section .text
+main:
+    mov rdi, [rel my_string]            ; Move into argument 1
+    mov rsi, 5                          ; Move into argument 2
+    call printf                         ; Print 'Number: 5'
 ```
 
 ## Macros
