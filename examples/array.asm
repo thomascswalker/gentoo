@@ -46,7 +46,7 @@ extern printf
 
 %macro FREE_ARRAY 1
     ALIGN_STACK
-    mov rax, %1
+    mov rdi, %1
     call array_free
     add rsp, 16
 %endmacro
