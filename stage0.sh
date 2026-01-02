@@ -82,21 +82,3 @@ INPUT_LABEL="$(basename "${INPUT_FILE}")"
 # Run the compiler with the chosen input file
 echo "Running Gentoo compiler..."
 "${COMPILER_BIN}" "${INPUT_FILE}" --exec
-
-# if [ ! -f "${ASM_OUTPUT}" ]; then
-#     echo "Expected assembly output '${ASM_OUTPUT}' not found." >&2
-#     exit 3
-# fi
-
-# echo "Assembling Gentoo output..."
-# nasm -f elf64 "${ASM_OUTPUT}" -o "${OBJ_OUTPUT}"
-# gcc "${OBJ_OUTPUT}" -o "${BINARY_OUTPUT}" -z noexecstack -no-pie
-
-# echo "Executing program generated from '${INPUT_LABEL}':"
-# set +e
-# "${BINARY_OUTPUT}"
-# PROGRAM_EXIT=$?
-# set -e
-# echo "" # New line
-# echo "Program exited with code: ${PROGRAM_EXIT}"
-# exit "${PROGRAM_EXIT}"
